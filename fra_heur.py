@@ -1,6 +1,7 @@
 
 import gc, weakref, pytest
 from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_HEURTIMING, quicksum
+import math
 
 #
 # heuristic: feasibe rounding approach
@@ -16,6 +17,8 @@ class feasiblerounding(Heur):
 
     # execution method of the heuristic
     def heurexec(self, heurtiming, nodeinfeasible):
+        delta = 0.99
+        gran = True
 
         print(">>>> Call feasible rounding heuristic at a node with depth %d" % (self.model.getDepth()))
 
@@ -24,40 +27,59 @@ class feasiblerounding(Heur):
         # Modell für innere Parallelmenge erstellen
         print(">>>> Build inner parallel set")
         ips_model = Model("ips")
-        # Variablen zum Modell hinzufügen
-        variables = self.model.getVars()
+
+        # Variablen zum Modell hinzufügen + vergrößern der Box-Constraints
+        variables = self.model.getVars(transformed=True)
+        ips_vars = dict()
         for v in variables:
-            ips_model.addVar(name=v.name,
-                             vtype=v.vtype(),
-                             lb=v.getLbLocal(),
-                             ub=v.getUbLocal(),
-                             obj=v.getObj())
+            if v.vtype!='CONTINUOUS':
+                lb = math.ceil(v.getLbLocal()) - delta + 0.5
+                ub = math.floor(v.getUbLocal()) + delta - 0.5
+                ips_vars['v.name'] = ips_model.addVar(name=v.name , vtype='CONTINUOUS', lb=lb, ub=ub, obj=v.getObj())
+            else:
+                ips_vars['v.name'] = ips_model.addVar(name=v.name , vtype='CONTINUOUS', lb=v.getLbLocal(), ub=v.getUbLocal(), obj=v.getObj())
 
         # Zielfunktion
-        ips_model.setObjective(self.model.getObjective())
+        # ips_model.setObjective(self.model.getObjective())
 
         # Durch Rows iterieren und modifizierte Ungleichungen hinzufügen
         linear_rows = self.model.getLPRowsData()
         for lrow in linear_rows:
             vlist = [i.getVar() for i in lrow.getCols()]
             clist = lrow.getVals()
-            beta = 0
-            for i in range(len(clist)):
-                if (vlist[i].vtype()!='CONTINUOUS'):
-                    beta += abs(clist[i])
 
-            ips_model.addCons(quicksum(vlist[i]*clist[i] for i in range(len(vlist))) <= lrow.getRhs()-0.5*beta)
+            beta = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype != 'CONTINUOUS')
+            # enlarged inner parallel set
+            current_delta = 0
+            if all(vlist[i].vtype != 'CONTINUOUS' for i in range(len(clist))) and all(clist[i].is_integer() for i in range(len(clist))):
+                current_delta = delta
+                print('enlargement possible!')
+            print(lrow.getLhs())
+            print(lrow.getRhs())
+            lhs = lrow.getLhs() + 0.5*beta - current_delta
+            rhs = lrow.getRhs() - 0.5*beta + current_delta
 
-        ips_model.optimize()
-        print(">>>> Optimized over inner parallel set")
+            if lhs > (rhs + 10**(-6)):
+                print('(Sub-)Problem is not granular')
+                gran = False
+                break
 
-        # Platzhalter: create solution
-        sol = self.model.createSol()
-        accepted = self.model.trySol(sol)
-        print(">>>> accepted solution? %s" % ("yes" if accepted == 1 else "no"))
+            ips_model.addCons(lhs <= (quicksum(ips_vars[vlist[i].name]*clist[i] for i in range(len(vlist))) <= rhs))
 
-        if accepted:
-            return {"result": SCIP_RESULT.FOUNDSOL}
+        if gran:
+
+            print(">>>> Optimize over inner parallel set")
+            ips_model.optimize()
+
+            # TODO: Rundung vom Optimum als Lösung übergeben
+            sol = self.model.createSol()
+            accepted = self.model.trySol(sol)
+            print(">>>> accepted solution? %s" % ("yes" if accepted == 1 else "no"))
+
+            if accepted:
+                return {"result": SCIP_RESULT.FOUNDSOL}
+            else:
+                return {"result": SCIP_RESULT.DIDNOTFIND}
         else:
             return {"result": SCIP_RESULT.DIDNOTFIND}
 
@@ -71,8 +93,8 @@ def test_heur():
     heuristic = feasiblerounding()
     m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE, freq=0)
 
-    # read problem from file
-    m.readProblem('/home/stefan/Downloads/10teams.mps')
+    # read exemplary problem from file
+    m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/mps-files/50v-10.mps')
 
     # optimize problem
     m.optimize()
