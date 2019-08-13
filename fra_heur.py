@@ -17,7 +17,7 @@ class feasiblerounding(Heur):
 
     # execution method of the heuristic
     def heurexec(self, heurtiming, nodeinfeasible):
-        global granular_problems, non_granular_problems
+        global granular_problems, non_granular_problems, eq_constrained, problem_number
 
         delta = 0.999
         solvable_ips = True
@@ -69,17 +69,17 @@ class feasiblerounding(Heur):
             clist = lrow.getVals()
             beta = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype != 'CONTINUOUS')
 
-            #print(vlist, clist)
+            # print(vlist, clist)
             # Vergrößerte IPM
             current_delta = 0
             if all(vlist[i].vtype != 'CONTINUOUS' for i in range(len(clist))) and all(
                     clist[i].is_integer() for i in range(len(clist))):
                 current_delta = delta
 
-            #print(lrow.getLhs(), lrow.getRhs())
+            # print(lrow.getLhs(), lrow.getRhs())
             lhs = lrow.getLhs() + 0.5 * beta - current_delta
             rhs = lrow.getRhs() - 0.5 * beta + current_delta
-            #print(lhs, rhs)
+            # print(lhs, rhs)
 
             # Unlösbarkeit abfangen
             if lhs > (rhs + 10 ** (-6)):
@@ -105,18 +105,21 @@ class feasiblerounding(Heur):
             print(">>>> accepted solution? %s" % ("yes" if accepted == 1 else "no"))
 
             if accepted:
-                granular_problems += 1
+                granular_problems.append(problem_number)
                 return {"result": SCIP_RESULT.FOUNDSOL}
             else:
-                non_granular_problems += 1
+                non_granular_problems.append(problem_number)
                 return {"result": SCIP_RESULT.DIDNOTFIND}
         else:
-            non_granular_problems += 1
+            non_granular_problems.append(problem_number)
+            eq_constrained.append(problem_number)
             return {"result": SCIP_RESULT.DIDNOTFIND}
 
 
-granular_problems = 0
-non_granular_problems = 0
+granular_problems = []
+non_granular_problems = []
+eq_constrained = []
+problem_number = 0
 
 
 def test_granularity():
@@ -124,13 +127,12 @@ def test_granularity():
     os.chdir(path_to_problems)
     problem_names = glob.glob("*.mps")
 
-    global granular_problems
-    global non_granular_problems
+    global granular_problems, non_granular_problems, eq_constrained, problem_number
     number_of_instances = len(problem_names)
-    iteration = 0
 
     for problem in problem_names:
-        iteration += 1
+        problem_number += 1
+
         # create model
         m = Model()
 
@@ -142,7 +144,7 @@ def test_granularity():
         m.setParam("limits/time", 60)
 
         # read exemplary problem from file
-        print('>>>>> Working on Problem: ', problem, ', which is number ', iteration, 'of ', number_of_instances)
+        print('>>>>> Working on Problem: ', problem, ', which is number ', problem_number, 'of ', number_of_instances)
         m.readProblem("".join([path_to_problems, problem]))
 
         # optimize problem
@@ -152,10 +154,13 @@ def test_granularity():
         del m
 
     print(">>>>> Auswertung")
+    print("Tested Instances", problem_names)
     print("Instances in Testbed: ", number_of_instances)
-    print("granualar instances: ", granular_problems)
-    print("Non granular Problems: ", non_granular_problems)
-    print("Non tested in Timelimit: ", number_of_instances-granular_problems-non_granular_problems)
+    print("granular instances: ", len(set(granular_problems)))
+    print("Non granular Problems: ", len(set(non_granular_problems)))
+    print("Equality constrained", len(set(eq_constrained)))
+    print("Both (because it restarted)", len(set(granular_problems).intersection(set(non_granular_problems))))
+    print("Not tested because of time-limit: ", number_of_instances-len(set(granular_problems))-len(set(non_granular_problems))+len(set(granular_problems).intersection(set(non_granular_problems))))
 
 
 def test_heur():
@@ -169,5 +174,5 @@ def test_heur():
 
 
 if __name__ == "__main__":
-    #test_heur()
+    # test_heur()
     test_granularity()
