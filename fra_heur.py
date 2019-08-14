@@ -1,6 +1,8 @@
-import os, glob
-from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_HEURTIMING, quicksum, Expr
+import glob
 import math
+import os
+
+from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_HEURTIMING, quicksum, Expr
 
 
 #
@@ -24,7 +26,8 @@ class feasiblerounding(Heur):
 
         print(">>>> Call feasible rounding heuristic at a node with depth %d" % (self.model.getDepth()))
 
-        # TODO:(Wichtig, damit IPS größer wird) Fixierte Variablen müssen aus dem LP rausgenommen werden / oder ein neues LP ohne die Variablen erstellen
+        # TODO:(Wichtig, damit IPS größer wird) Fixierte Variablen müssen aus dem LP rausgenommen werden / oder ein
+        #  neues LP ohne die Variablen erstellen
 
         # Modell für innere Parallelmenge erstellen
         print(">>>> Build IPS")
@@ -34,7 +37,7 @@ class feasiblerounding(Heur):
         variables = self.model.getVars(transformed=True)
         ips_vars = dict()
         for v in variables:
-            if v.vtype != 'CONTINUOUS':
+            if v.vtype() != 'CONTINUOUS':
                 lb = math.ceil(v.getLbLocal()) - delta + 0.5
                 ub = math.floor(v.getUbLocal()) + delta - 0.5
                 ips_vars[v.name] = ips_model.addVar(name=v.name, vtype='CONTINUOUS', lb=lb, ub=ub, obj=v.getObj())
@@ -55,40 +58,40 @@ class feasiblerounding(Heur):
         obj_sub.normalize()
         ips_model.setObjective(obj_sub, sense=zf_sense)
 
-        # zf_ex = self.model.getObjective()
-        # zf_ex.normalize()
-        # zf_items = zf_ex.terms.items()
-        # Nur für lineare Zielfunktionen, Konstanten werden rausgelassen
-        # new_expr = quicksum(ips_vars['t_'+v[0].name]*coef for v,coef in zf_items if len(v)!=0)
-        # ips_model.setObjective(new_expr,sense=zf_sense)
-
         # Durch Rows iterieren und modifizierte Ungleichungen hinzufügen
         linear_rows = self.model.getLPRowsData()
+        number_of_rows = len(linear_rows)
+        removable_rows = 0
         for lrow in linear_rows:
-            vlist = [i.getVar() for i in lrow.getCols()]
-            clist = lrow.getVals()
-            beta = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype != 'CONTINUOUS')
+            if lrow.isRemovable():
+                removable_rows += 1
+            else:
+                vlist = [i.getVar() for i in lrow.getCols()]
+                clist = lrow.getVals()
+                beta = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype() != 'CONTINUOUS')
 
-            # print(vlist, clist)
-            # Vergrößerte IPM
-            current_delta = 0
-            if all(vlist[i].vtype != 'CONTINUOUS' for i in range(len(clist))) and all(
-                    clist[i].is_integer() for i in range(len(clist))):
-                current_delta = delta
+                # Vergrößerte IPM
+                current_delta = 0
+                if all(vlist[i].vtype() != 'CONTINUOUS' for i in range(len(clist))) and all(
+                        clist[i].is_integer() for i in range(len(clist))):
+                    current_delta = delta
 
-            # print(lrow.getLhs(), lrow.getRhs())
-            lhs = lrow.getLhs() + 0.5 * beta - current_delta
-            rhs = lrow.getRhs() - 0.5 * beta + current_delta
-            # print(lhs, rhs)
+                lhs = lrow.getLhs() + 0.5 * beta - current_delta
+                rhs = lrow.getRhs() - 0.5 * beta + current_delta
 
-            # Unlösbarkeit abfangen
-            if lhs > (rhs + 10 ** (-6)):
-                print('>>>> EIPS is empty')
-                solvable_ips = False
-                break
+                # Unlösbarkeit abfangen
+                if lhs > (rhs + 10 ** (-6)):
+                    # print('>>>> EIPS is empty')
+                    solvable_ips = False
+                    print(vlist, clist)
+                    print([v.vtype() for v in vlist])
+                    break
 
-            # Ungleichung dem Modell hinzufügen
-            ips_model.addCons(lhs <= (quicksum(ips_vars[vlist[i].name] * clist[i] for i in range(len(vlist))) <= rhs))
+                # Ungleichung dem Modell hinzufügen
+                ips_model.addCons(lhs <= (quicksum(ips_vars[vlist[i].name] * clist[i] for i in range(len(vlist))) <= rhs))
+
+        print('>>>> Total number of LP-Rows: ', number_of_rows)
+        print('>>>> Removable LP-Rows: ', removable_rows)
 
         if solvable_ips:
             print(">>>> Optimize over EIPS")
@@ -96,7 +99,7 @@ class feasiblerounding(Heur):
 
             sol = self.model.createSol()
             for v in variables:
-                if v.vtype != 'CONTINUOUS':
+                if v.vtype() != 'CONTINUOUS':
                     self.model.setSolVal(sol, v, round(ips_model.getVal(ips_vars[v.name])))
                 else:
                     self.model.setSolVal(sol, v, ips_model.getVal(ips_vars[v.name]))
@@ -111,6 +114,7 @@ class feasiblerounding(Heur):
                 non_granular_problems.append(problem_number)
                 return {"result": SCIP_RESULT.DIDNOTFIND}
         else:
+            print('>>>> EIPS is empty')
             non_granular_problems.append(problem_number)
             eq_constrained.append(problem_number)
             return {"result": SCIP_RESULT.DIDNOTFIND}
@@ -167,8 +171,8 @@ def test_heur():
     m = Model()
     heuristic = feasiblerounding()
     m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
-                  freq=15)
-    m.readProblem('/home/stefan/Dokumente/opt_problems/miplib2010_benchmark/dfn-gwin-UUM.mps')
+                  freq=0)
+    m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/50v-10.mps')
     m.optimize()
     del m
 
