@@ -62,33 +62,31 @@ class feasiblerounding(Heur):
         linear_rows = self.model.getLPRowsData()
         number_of_rows = len(linear_rows)
         removable_rows = 0
+
         for lrow in linear_rows:
-            if lrow.isRemovable():
-                removable_rows += 1
+            # if lrow.isRemovable():
+            # removable_rows += 1
+            # else:
+            vlist = [i.getVar() for i in lrow.getCols()]
+            clist = lrow.getVals()
+            beta = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype() != 'CONTINUOUS')
+
+            # Vergrößerte IPM
+            if all(vlist[i].vtype() != 'CONTINUOUS' for i in range(len(clist))) and all(
+                    clist[i].is_integer() for i in range(len(clist))):
+                lhs = math.ceil(lrow.getLhs()) + 0.5 * beta - delta
+                rhs = math.floor(lrow.getRhs()) - 0.5 * beta + delta
             else:
-                vlist = [i.getVar() for i in lrow.getCols()]
-                clist = lrow.getVals()
-                beta = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype() != 'CONTINUOUS')
+                lhs = lrow.getLhs() + 0.5 * beta
+                rhs = lrow.getRhs() - 0.5 * beta
 
-                # Vergrößerte IPM
-                current_delta = 0
-                if all(vlist[i].vtype() != 'CONTINUOUS' for i in range(len(clist))) and all(
-                        clist[i].is_integer() for i in range(len(clist))):
-                    current_delta = delta
+            # Unlösbarkeit abfangen
+            if lhs > (rhs + 10 ** (-6)):
+                solvable_ips = False
+                break
 
-                lhs = lrow.getLhs() + 0.5 * beta - current_delta
-                rhs = lrow.getRhs() - 0.5 * beta + current_delta
-
-                # Unlösbarkeit abfangen
-                if lhs > (rhs + 10 ** (-6)):
-                    # print('>>>> EIPS is empty')
-                    solvable_ips = False
-                    print(vlist, clist)
-                    print([v.vtype() for v in vlist])
-                    break
-
-                # Ungleichung dem Modell hinzufügen
-                ips_model.addCons(lhs <= (quicksum(ips_vars[vlist[i].name] * clist[i] for i in range(len(vlist))) <= rhs))
+            # Ungleichung dem Modell hinzufügen
+            ips_model.addCons(lhs <= (quicksum(ips_vars[vlist[i].name] * clist[i] for i in range(len(vlist))) <= rhs))
 
         print('>>>> Total number of LP-Rows: ', number_of_rows)
         print('>>>> Removable LP-Rows: ', removable_rows)
@@ -96,6 +94,7 @@ class feasiblerounding(Heur):
         if solvable_ips:
             print(">>>> Optimize over EIPS")
             ips_model.optimize()
+            # ips_model.getStatus() != "optimal"
 
             sol = self.model.createSol()
             for v in variables:
@@ -104,7 +103,9 @@ class feasiblerounding(Heur):
                 else:
                     self.model.setSolVal(sol, v, ips_model.getVal(ips_vars[v.name]))
 
-            accepted = self.model.trySol(sol)
+            accepted = self.model.trySol(sol, printreason=True, completely=False, checkbounds=True,
+                                         checkintegrality=True, checklprows=True, free=True)
+
             print(">>>> accepted solution? %s" % ("yes" if accepted == 1 else "no"))
 
             if accepted:
@@ -126,7 +127,7 @@ eq_constrained = []
 problem_number = 0
 
 
-def test_granularity():
+def test_granularity_rootnode():
     path_to_problems = '/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/'
     os.chdir(path_to_problems)
     problem_names = glob.glob("*.mps")
@@ -145,7 +146,7 @@ def test_granularity():
         m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
                       freq=0)
 
-        m.setParam("limits/time", 60)
+        m.setParam("limits/time", 30)
 
         # read exemplary problem from file
         print('>>>>> Working on Problem: ', problem, ', which is number ', problem_number, 'of ', number_of_instances)
@@ -164,7 +165,9 @@ def test_granularity():
     print("Non granular Problems: ", len(set(non_granular_problems)))
     print("Equality constrained", len(set(eq_constrained)))
     print("Both (because it restarted)", len(set(granular_problems).intersection(set(non_granular_problems))))
-    print("Not tested because of time-limit: ", number_of_instances-len(set(granular_problems))-len(set(non_granular_problems))+len(set(granular_problems).intersection(set(non_granular_problems))))
+    print("Not tested because of time-limit: ",
+          number_of_instances - len(set(granular_problems)) - len(set(non_granular_problems)) + len(
+              set(granular_problems).intersection(set(non_granular_problems))))
 
 
 def test_heur():
@@ -172,11 +175,11 @@ def test_heur():
     heuristic = feasiblerounding()
     m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
                   freq=0)
-    m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/50v-10.mps')
+    m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/fixnet6.mps')
     m.optimize()
     del m
 
 
 if __name__ == "__main__":
-    # test_heur()
-    test_granularity()
+    test_heur()
+    # test_granularity_rootnode()
