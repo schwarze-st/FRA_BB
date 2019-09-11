@@ -4,7 +4,6 @@ import os
 
 from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_HEURTIMING, quicksum, Expr
 
-
 #
 # heuristic: feasible rounding approach
 #
@@ -35,15 +34,18 @@ class feasiblerounding(Heur):
 
         # Variablen zum Modell hinzufügen + vergrößern der Box-Constraints
         variables = self.model.getVars(transformed=True)
+        variables_lpval = []
         ips_vars = dict()
         for v in variables:
+            lower = v.getLbLocal()
+            upper = v.getUbLocal()
+            variables_lpval.append(self.model.getVal(v))
             if v.vtype() != 'CONTINUOUS':
-                lb = math.ceil(v.getLbLocal()) - delta + 0.5
-                ub = math.floor(v.getUbLocal()) + delta - 0.5
-                ips_vars[v.name] = ips_model.addVar(name=v.name, vtype='CONTINUOUS', lb=lb, ub=ub, obj=v.getObj())
-            else:
-                ips_vars[v.name] = ips_model.addVar(name=v.name, vtype='CONTINUOUS', lb=v.getLbLocal(),
-                                                    ub=v.getUbLocal(), obj=v.getObj())
+                if lower is not None:
+                    lower = math.ceil(lower) - delta + 0.5
+                if upper is not None:
+                    upper = math.floor(upper) + delta - 0.5
+            ips_vars[v.name] = ips_model.addVar(name=v.name, vtype='CONTINUOUS', lb=lower, ub=upper, obj=v.getObj())
 
         # Zielfunktion setzen 
         obj_sub = Expr()
@@ -61,16 +63,18 @@ class feasiblerounding(Heur):
         # Durch Rows iterieren und modifizierte Ungleichungen hinzufügen
         linear_rows = self.model.getLPRowsData()
         number_of_rows = len(linear_rows)
-        removable_rows = 0
 
         for lrow in linear_rows:
-            # if lrow.isRemovable():
-            # removable_rows += 1
-            # else:
-            vlist = [i.getVar() for i in lrow.getCols()]
+            vlist = [col.getVar() for col in lrow.getCols()]
             clist = lrow.getVals()
+            const = lrow.getConstant()
+            if const:
+                print('>>>>> lrow Constant: ', const)
+
             beta = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype() != 'CONTINUOUS')
 
+            lhs = lrow.getLhs()
+            rhs = lrow.getRhs()
             # Vergrößerte IPM
             if all(vlist[i].vtype() != 'CONTINUOUS' for i in range(len(clist))) and all(
                     clist[i].is_integer() for i in range(len(clist))):
@@ -86,22 +90,23 @@ class feasiblerounding(Heur):
                 break
 
             # Ungleichung dem Modell hinzufügen
-            ips_model.addCons(lhs <= (quicksum(ips_vars[vlist[i].name] * clist[i] for i in range(len(vlist))) <= rhs))
+            ips_model.addCons(
+                lhs <= (quicksum(ips_vars[vlist[i].name] * clist[i] for i in range(len(vlist))) + const <= rhs))
 
         print('>>>> Total number of LP-Rows: ', number_of_rows)
-        print('>>>> Removable LP-Rows: ', removable_rows)
 
         if solvable_ips:
             print(">>>> Optimize over EIPS")
             ips_model.optimize()
-            # ips_model.getStatus() != "optimal"
+            if ips_model.getStatus() == 'optimal':
+                ips_optimal_solved.append(problem_number)
 
             sol = self.model.createSol()
             for v in variables:
+                val_ips = ips_model.getVal(ips_vars[v.name])
                 if v.vtype() != 'CONTINUOUS':
-                    self.model.setSolVal(sol, v, round(ips_model.getVal(ips_vars[v.name])))
-                else:
-                    self.model.setSolVal(sol, v, ips_model.getVal(ips_vars[v.name]))
+                    val_ips = round(val_ips)
+                self.model.setSolVal(sol, v, val_ips)
 
             accepted = self.model.trySol(sol, printreason=True, completely=False, checkbounds=True,
                                          checkintegrality=True, checklprows=True, free=True)
@@ -112,6 +117,11 @@ class feasiblerounding(Heur):
                 granular_problems.append(problem_number)
                 return {"result": SCIP_RESULT.FOUNDSOL}
             else:
+                vio = []
+                for row in linear_rows:
+                    vio.append(self.model.getRowSolFeas(row, sol))
+                print('Maximum violation of LP row: ', min(vio))
+                max_vio.append((problem_number, min(vio)))
                 non_granular_problems.append(problem_number)
                 return {"result": SCIP_RESULT.DIDNOTFIND}
         else:
@@ -124,8 +134,9 @@ class feasiblerounding(Heur):
 granular_problems = []
 non_granular_problems = []
 eq_constrained = []
+ips_optimal_solved = []
 problem_number = 0
-
+max_vio = []
 
 def test_granularity_rootnode():
     path_to_problems = '/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/'
@@ -135,8 +146,9 @@ def test_granularity_rootnode():
     global granular_problems, non_granular_problems, eq_constrained, problem_number
     number_of_instances = len(problem_names)
 
-    for problem in problem_names:
-        problem_number += 1
+    for i in [34, 43, 46, 18, 50, 54, 29, 31]:
+        problem_number += i
+        problem = problem_names[i-1]
 
         # create model
         m = Model()
@@ -146,7 +158,7 @@ def test_granularity_rootnode():
         m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
                       freq=0)
 
-        m.setParam("limits/time", 30)
+        m.setParam("limits/time", 45)
 
         # read exemplary problem from file
         print('>>>>> Working on Problem: ', problem, ', which is number ', problem_number, 'of ', number_of_instances)
@@ -157,6 +169,12 @@ def test_granularity_rootnode():
 
         # free model explicitly
         del m
+
+    print(granular_problems)
+    print(non_granular_problems)
+    print(eq_constrained)
+    print(ips_optimal_solved)
+    print(max_vio)
 
     print(">>>>> Auswertung")
     print("Tested Instances", problem_names)
@@ -181,5 +199,5 @@ def test_heur():
 
 
 if __name__ == "__main__":
-    test_heur()
-    # test_granularity_rootnode()
+    # test_heur()
+    test_granularity_rootnode()
