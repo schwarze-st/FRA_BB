@@ -8,7 +8,23 @@ from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_HEURTIMING, quicksum, Expr
 # heuristic: feasible rounding approach
 #
 
+
 class feasiblerounding(Heur):
+
+    def add_vars_and_bounds_to_ips(self, ips_model, enlarged=True, delta=0.999):
+        variables = self.model.getVars(transformed=True)
+        ips_vars = dict()
+        for v in variables:
+            lower = v.getLbLocal()
+            upper = v.getUbLocal()
+            if v.vtype() != 'CONTINUOUS' and enlarged:
+                if lower is not None:
+                    lower = math.ceil(lower) - delta + 0.5
+                if upper is not None:
+                    upper = math.floor(upper) + delta - 0.5
+            ips_vars[v.name] = ips_model.addVar(name=v.name, vtype='CONTINUOUS', lb=lower, ub=upper, obj=v.getObj())
+
+        return ips_model, variables, ips_vars
 
     def heurinitsol(self):
         print(">>>> call heurinitsol()")
@@ -19,35 +35,19 @@ class feasiblerounding(Heur):
     # execution method of the heuristic
     def heurexec(self, heurtiming, nodeinfeasible):
         global granular_problems, non_granular_problems, eq_constrained, problem_number
-
         delta = 0.999
         solvable_ips = True
 
         print(">>>> Call feasible rounding heuristic at a node with depth %d" % (self.model.getDepth()))
+        print(">>>> Build IPS")
+
+        ips_model = Model("ips")
+        ips_model, variables, ips_vars = self.add_vars_and_bounds_to_ips(ips_model, enlarged=True, delta=0.999)
 
         # TODO:(Wichtig, damit IPS größer wird) Fixierte Variablen müssen aus dem LP rausgenommen werden / oder ein
         #  neues LP ohne die Variablen erstellen
 
-        # Modell für innere Parallelmenge erstellen
-        print(">>>> Build IPS")
-        ips_model = Model("ips")
-
-        # Variablen zum Modell hinzufügen + vergrößern der Box-Constraints
-        variables = self.model.getVars(transformed=True)
-        variables_lpval = []
-        ips_vars = dict()
-        for v in variables:
-            lower = v.getLbLocal()
-            upper = v.getUbLocal()
-            variables_lpval.append(self.model.getVal(v))
-            if v.vtype() != 'CONTINUOUS':
-                if lower is not None:
-                    lower = math.ceil(lower) - delta + 0.5
-                if upper is not None:
-                    upper = math.floor(upper) + delta - 0.5
-            ips_vars[v.name] = ips_model.addVar(name=v.name, vtype='CONTINUOUS', lb=lower, ub=upper, obj=v.getObj())
-
-        # Zielfunktion setzen 
+        # Zielfunktion setzen
         obj_sub = Expr()
         zf_sense = self.model.getObjectiveSense()
         k = 0
@@ -66,10 +66,9 @@ class feasiblerounding(Heur):
 
         for lrow in linear_rows:
             vlist = [col.getVar() for col in lrow.getCols()]
+            lp_vals = [self.model.getVal(v) for v in vlist]
             clist = lrow.getVals()
             const = lrow.getConstant()
-            if const:
-                print('>>>>> lrow Constant: ', const)
 
             beta = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype() != 'CONTINUOUS')
 
@@ -105,16 +104,27 @@ class feasiblerounding(Heur):
             for v in variables:
                 val_ips = ips_model.getVal(ips_vars[v.name])
                 if v.vtype() != 'CONTINUOUS':
-                    val_ips = round(val_ips)
+                    val_ips = int(round(val_ips))
                 self.model.setSolVal(sol, v, val_ips)
 
-            accepted = self.model.trySol(sol, printreason=True, completely=False, checkbounds=True,
-                                         checkintegrality=True, checklprows=True, free=True)
+            print('Zielfunktionswert zulässiger Punkt (transformed): ', self.model.getSolObjVal(sol, original=False))
+            print('Zielfunktionswert zulässiger Punkt (original): ', self.model.getSolObjVal(sol, original=True))
+            print('Zielfunktionswert bester bekannter Punkt: ', self.model.getSolObjVal(self.model.getBestSol()))
 
+            accepted_check = self.model.checkSol(sol)
+            accepted = self.model.trySol(sol)
+
+            print(">>>> feasible solution? %s" % ("yes" if accepted_check == 1 else "no"))
             print(">>>> accepted solution? %s" % ("yes" if accepted == 1 else "no"))
 
             if accepted:
                 granular_problems.append(problem_number)
+                vio = []
+                for row in linear_rows:
+                    vio.append(self.model.getRowSolFeas(row, sol))
+                print('Maximum violation of LP row: ', min(vio))
+                max_vio.append((problem_number, min(vio)))
+                non_granular_problems.append(problem_number)
                 return {"result": SCIP_RESULT.FOUNDSOL}
             else:
                 vio = []
@@ -193,11 +203,11 @@ def test_heur():
     heuristic = feasiblerounding()
     m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
                   freq=0)
-    m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/fixnet6.mps')
+    m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/mik.250-1-100.1.mps')
     m.optimize()
     del m
 
 
 if __name__ == "__main__":
-    # test_heur()
-    test_granularity_rootnode()
+    test_heur()
+    # test_granularity_rootnode()
