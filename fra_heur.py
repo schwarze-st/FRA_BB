@@ -50,6 +50,43 @@ class feasiblerounding(Heur):
         obj_sub.normalize()
         model.setObjective(obj_sub, sense=zf_sense)
 
+    def enlargement_possible(self, vlist, clist):
+        return self.options['enlargement'] and all(vlist[i].vtype() != 'CONTINUOUS' for i in range(len(clist))) and all(
+            clist[i].is_integer() for i in range(len(clist)))
+
+    def is_fixed(self, var):
+        return (var.vtype()=='BINARY' and round(var.getLPSol()) == var.getLPSol())
+
+    def add_ips_constraints(self, ips_model, var_dict):
+        linear_rows = self.model.getLPRowsData()
+
+        for lrow in linear_rows:
+            vlist = [col.getVar() for col in lrow.getCols()]
+            clist = lrow.getVals()
+            const = lrow.getConstant()
+            lhs = lrow.getLhs()
+            rhs = lrow.getRhs()
+
+            beta = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype() != 'CONTINUOUS')
+            if self.options['fix_integers']:
+                fixing_enlargement = 0
+                for i, var in enumerate(vlist):
+                    if self.is_fixed(var):
+                        fixing_enlargement += abs(clist[i])
+                beta = beta - fixing_enlargement
+            if self.enlargement_possible(vlist, clist):
+                lhs = math.ceil(lrow.getLhs()) + 0.5 * beta - self.options['delta']
+                rhs = math.floor(lrow.getRhs()) - 0.5 * beta + self.options['delta']
+            else:
+                lhs = lrow.getLhs() + 0.5 * beta
+                rhs = lrow.getRhs() - 0.5 * beta
+            if lhs > (rhs + 10 ** (-6)):
+                logging.warning("Inner parallel set is empty (equality constrained)")
+                break
+
+            ips_model.addCons(
+                lhs <= (quicksum(var_dict[vlist[i].name] * clist[i] for i in range(len(vlist))) + const <= rhs))
+
     def get_lp_violation(self, sol):
         local_linear_rows = self.model.getLPRowsData()
         vio = []
@@ -76,37 +113,14 @@ class feasiblerounding(Heur):
         ips_model = Model("ips")
         ips_vars = self.add_vars_and_bounds(ips_model)
         self.add_objective(ips_model,ips_vars)
+        self.add_ips_constraints(ips_model, ips_vars)
 
         # modifizierte Ungleichungen hinzufügen
-        linear_rows = self.model.getLPRowsData()
 
-        for lrow in linear_rows:
-            vlist = [col.getVar() for col in lrow.getCols()]
-            clist = lrow.getVals()
-            const = lrow.getConstant()
-            lhs = lrow.getLhs()
-            rhs = lrow.getRhs()
-
-            beta = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype() != 'CONTINUOUS')
-            if fix_integers:
-                minus = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype() == 'BINARY' and round(vlist[i].getLPSol()) == vlist[i].getLPSol())
-                beta = beta - minus
-            if enlarged and all(vlist[i].vtype() != 'CONTINUOUS' for i in range(len(clist))) and all(
-                    clist[i].is_integer() for i in range(len(clist))):
-                lhs = math.ceil(lrow.getLhs()) + 0.5 * beta - delta
-                rhs = math.floor(lrow.getRhs()) - 0.5 * beta + delta
-            else:
-                lhs = lrow.getLhs() + 0.5 * beta
-                rhs = lrow.getRhs() - 0.5 * beta
-            if lhs > (rhs + 10 ** (-6)):
-                logging.warning("Inner parallel set is empty (equality constrained)")
-                break
-
-            ips_model.addCons(
-                lhs <= (quicksum(ips_vars[vlist[i].name] * clist[i] for i in range(len(vlist))) + const <= rhs))
 
         logging.info(">>>> Optimize over EIPS")
         ips_model.optimize()
+        linear_rows = self.model.getLPRowsData()
 
         # Post-Processing -> fix rounded integer values and optimize
         post_model = Model()
