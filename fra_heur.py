@@ -12,22 +12,30 @@ from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_HEURTIMING, quicksum, Expr
 
 class feasiblerounding(Heur):
 
-    def add_vars_and_bounds(self, local_model, original_vars, enlarged, fix_binaries, delta):
+    def __init__(self, options = {}):
+
+        self.options = {'enlargement': True, 'post_processing': True,
+                        'fix_integers': True, 'delta' : 0.999}
+        for key in options:
+            self.options[key] = options[key]
+
+    def add_vars_and_bounds(self, local_model):
+        original_vars = self.model.getVars(transformed=True)
         var_dict = dict()
         for var in original_vars:
             lower = var.getLbLocal()
             upper = var.getUbLocal()
-            if var.vtype() != 'CONTINUOUS' and enlarged:
-                if fix_binaries and round(var.getLPSol()) == var.getLPSol() and var.vtype() == 'BINARY':
+            if var.vtype() != 'CONTINUOUS' and self.options['enlargement']:
+                if self.options['fix_integers'] and round(var.getLPSol()) == var.getLPSol() and var.vtype() == 'BINARY':
                     lower = upper = var.getLPSol()
                 else:
                     if lower is not None:
-                        lower = math.ceil(lower) - delta + 0.5
+                        lower = math.ceil(lower) - self.options['delta'] + 0.5
                     if upper is not None:
-                        upper = math.floor(upper) + delta - 0.5
+                        upper = math.floor(upper) + self.options['delta'] - 0.5
             var_dict[var.name] = local_model.addVar(name=var.name, vtype='CONTINUOUS', lb=lower, ub=upper, obj=var.getObj())
 
-        return local_model, var_dict
+        return var_dict
 
     def get_lp_violation(self, sol):
         local_linear_rows = self.model.getLPRowsData()
@@ -44,16 +52,16 @@ class feasiblerounding(Heur):
 
     # execution method of the heuristic
     def heurexec(self, heurtiming, nodeinfeasible):
-        delta = 0.999
-        fix_binaries = True
-        enlarged = True
+        delta = self.options['delta']
+        fix_integers = self.options['fix_integers']
+        enlarged = self.options['enlargement']
 
         logging.info(">>>> Call feasible rounding heuristic at a node with depth %d" % (self.model.getDepth()))
         logging.info(">>>> Build inner parallel set")
 
         variables = self.model.getVars(transformed=True)
         ips_model = Model("ips")
-        ips_model, ips_vars = self.add_vars_and_bounds(ips_model, variables, enlarged, fix_binaries, delta)
+        ips_vars = self.add_vars_and_bounds(ips_model)
 
         # Zielfunktion setzen
         obj_sub = Expr()
@@ -80,7 +88,7 @@ class feasiblerounding(Heur):
             rhs = lrow.getRhs()
 
             beta = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype() != 'CONTINUOUS')
-            if fix_binaries:
+            if fix_integers:
                 minus = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype() == 'BINARY' and round(vlist[i].getLPSol()) == vlist[i].getLPSol())
                 beta = beta - minus
             if enlarged and all(vlist[i].vtype() != 'CONTINUOUS' for i in range(len(clist))) and all(
@@ -176,11 +184,12 @@ def test_granularity_rootnode():
 
 def test_heur():
     m = Model()
+    options = {'enlarged': True, 'post_processing' : True}
     heuristic = feasiblerounding()
     m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
                   freq=5)
     # m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/mik.250-1-100.1.mps') # implicit integer variable
-    m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/mas74.mps') # ERROR SIGSEGV
+    m.readProblem('50v-10.mps') # ERROR SIGSEGV
     m.optimize()
     del m
 
