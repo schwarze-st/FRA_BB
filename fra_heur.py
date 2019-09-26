@@ -57,6 +57,13 @@ class feasiblerounding(Heur):
     def is_fixed(self, var):
         return (var.vtype()=='BINARY' and round(var.getLPSol()) == var.getLPSol())
 
+    def compute_fixing_enlargement(self, vlist, clist):
+        fixing_enlargement = 0
+        for i, var in enumerate(vlist):
+            if self.is_fixed(var):
+                fixing_enlargement += abs(clist[i])
+        return fixing_enlargement
+
     def add_ips_constraints(self, ips_model, var_dict):
         linear_rows = self.model.getLPRowsData()
 
@@ -64,15 +71,10 @@ class feasiblerounding(Heur):
             vlist = [col.getVar() for col in lrow.getCols()]
             clist = lrow.getVals()
             const = lrow.getConstant()
-            lhs = lrow.getLhs()
-            rhs = lrow.getRhs()
 
             beta = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype() != 'CONTINUOUS')
             if self.options['fix_integers']:
-                fixing_enlargement = 0
-                for i, var in enumerate(vlist):
-                    if self.is_fixed(var):
-                        fixing_enlargement += abs(clist[i])
+                fixing_enlargement = self.compute_fixing_enlargement(vlist, clist)
                 beta = beta - fixing_enlargement
             if self.enlargement_possible(vlist, clist):
                 lhs = math.ceil(lrow.getLhs()) + 0.5 * beta - self.options['delta']
@@ -100,6 +102,9 @@ class feasiblerounding(Heur):
     def heurexitsol(self):
         print(">>>> call heurexitsol()")
 
+
+
+
     # execution method of the heuristic
     def heurexec(self, heurtiming, nodeinfeasible):
         delta = self.options['delta']
@@ -115,11 +120,9 @@ class feasiblerounding(Heur):
         self.add_objective(ips_model,ips_vars)
         self.add_ips_constraints(ips_model, ips_vars)
 
-        # modifizierte Ungleichungen hinzufügen
-
-
         logging.info(">>>> Optimize over EIPS")
         ips_model.optimize()
+
         linear_rows = self.model.getLPRowsData()
 
         # Post-Processing -> fix rounded integer values and optimize
