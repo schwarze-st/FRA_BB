@@ -90,7 +90,6 @@ class feasiblerounding(Heur):
             else:
                 lhs = lrow.getLhs() + 0.5 * beta
                 rhs = lrow.getRhs() - 0.5 * beta
-
             if lhs > (rhs + 10 ** (-6)):
                 logging.warning("Inner parallel set is empty (equality constrained)")
                 break
@@ -135,10 +134,13 @@ class feasiblerounding(Heur):
         logging.debug(">>>> feasible solution? %s" % ("yes" if feasible_rounding == 1 else "no"))
         logging.info(">>>> accepted solution? %s" % ("yes" if accepted_solution == 1 else "no"))
 
-        if ips_model.checkSol(ips_model.getBestSol()) and feasible_rounding == 0:
+        if ips_model.getStatus() == 'optimal' and feasible_rounding == 0:
             logging.warning("ips feasible, but no feasible rounding")
 
         logging.debug('Maximum violation of LP row: ' + str(self.get_lp_violation(sol)))
+
+        del ips_model
+        del post_model
 
         if accepted_solution:
             return {"result": SCIP_RESULT.FOUNDSOL}
@@ -168,14 +170,17 @@ def test_granularity_rootnode():
         # free model explicitly
         del m
         i = i+1
+        if i > 10:
+            break
 
 
 def test_heur():
     m = Model()
     heuristic = feasiblerounding()
     m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
-                  freq=0)
-    m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/mik.250-1-100.1.mps')
+                  freq=5)
+    # m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/mik.250-1-100.1.mps') # implicit integer variable
+    m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/mas74.mps') # ERROR SIGSEGV
     m.optimize()
     del m
 
