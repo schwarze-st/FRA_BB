@@ -19,7 +19,7 @@ class feasiblerounding(Heur):
         for key in options:
             self.options[key] = options[key]
 
-    def add_vars_and_bounds(self, local_model):
+    def add_vars_and_bounds(self, model):
         original_vars = self.model.getVars(transformed=True)
         var_dict = dict()
         for var in original_vars:
@@ -33,9 +33,22 @@ class feasiblerounding(Heur):
                         lower = math.ceil(lower) - self.options['delta'] + 0.5
                     if upper is not None:
                         upper = math.floor(upper) + self.options['delta'] - 0.5
-            var_dict[var.name] = local_model.addVar(name=var.name, vtype='CONTINUOUS', lb=lower, ub=upper, obj=var.getObj())
+            var_dict[var.name] = model.addVar(name=var.name, vtype='CONTINUOUS', lb=lower, ub=upper, obj=var.getObj())
 
         return var_dict
+
+    def add_objective(self, model, var_dict):
+        obj_sub = Expr()
+        variables = self.model.getVars(transformed=True)
+        zf_sense = self.model.getObjectiveSense()
+        for v in variables:
+            coefficient = v.getObj()
+            if coefficient != 0:
+                obj_sub += coefficient * var_dict[v.name]
+        if obj_sub.degree() != 1:
+            logging.warning("Objective function is empty")
+        obj_sub.normalize()
+        model.setObjective(obj_sub, sense=zf_sense)
 
     def get_lp_violation(self, sol):
         local_linear_rows = self.model.getLPRowsData()
@@ -62,20 +75,7 @@ class feasiblerounding(Heur):
         variables = self.model.getVars(transformed=True)
         ips_model = Model("ips")
         ips_vars = self.add_vars_and_bounds(ips_model)
-
-        # Zielfunktion setzen
-        obj_sub = Expr()
-        zf_sense = self.model.getObjectiveSense()
-        k = 0
-        for v in variables:
-            coefficient = v.getObj()
-            if coefficient != 0:
-                obj_sub += coefficient * ips_vars[v.name]
-                k = 1
-        if k == 0:
-            logging.warning("Objective function is empty")
-        obj_sub.normalize()
-        ips_model.setObjective(obj_sub, sense=zf_sense)
+        self.add_objective(ips_model,ips_vars)
 
         # modifizierte Ungleichungen hinzufügen
         linear_rows = self.model.getLPRowsData()
