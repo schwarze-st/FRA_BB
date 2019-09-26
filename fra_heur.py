@@ -20,12 +20,13 @@ class feasiblerounding(Heur):
             self.options[key] = options[key]
 
     def add_vars_and_bounds(self, model):
+
         original_vars = self.model.getVars(transformed=True)
         var_dict = dict()
         for var in original_vars:
             lower = var.getLbLocal()
             upper = var.getUbLocal()
-            if var.vtype() != 'CONTINUOUS' and self.options['enlargement']:
+            if var.vtype() != 'CONTINUOUS':
                 if self.options['fix_integers'] and round(var.getLPSol()) == var.getLPSol() and var.vtype() == 'BINARY':
                     lower = upper = var.getLPSol()
                 else:
@@ -38,6 +39,7 @@ class feasiblerounding(Heur):
         return var_dict
 
     def add_objective(self, model, var_dict):
+
         obj_sub = Expr()
         variables = self.model.getVars(transformed=True)
         zf_sense = self.model.getObjectiveSense()
@@ -51,7 +53,7 @@ class feasiblerounding(Heur):
         model.setObjective(obj_sub, sense=zf_sense)
 
     def enlargement_possible(self, vlist, clist):
-        return self.options['enlargement'] and all(vlist[i].vtype() != 'CONTINUOUS' for i in range(len(clist))) and all(
+        return all(vlist[i].vtype() != 'CONTINUOUS' for i in range(len(clist))) and all(
             clist[i].is_integer() for i in range(len(clist)))
 
     def is_fixed(self, var):
@@ -102,14 +104,24 @@ class feasiblerounding(Heur):
     def heurexitsol(self):
         print(">>>> call heurexitsol()")
 
-
+    def add_reduced_vars(self, reduced_model, ips_model, ips_vars):
+        reduced_var_dict = {}
+        original_vars = self.model.getVars(transformed=True)
+        for var in original_vars:
+            lower = var.getLbLocal()
+            upper = var.getUbLocal()
+            if var.vtype() != 'CONTINUOUS':
+                local_rounding = int(round(ips_model.getVal(ips_vars[var.name])))
+                lower = upper = local_rounding
+            reduced_var_dict[var.name] = reduced_model.addVar(name=var.name, vtype='CONTINUOUS', lb=lower, ub=upper,
+                                                           obj=var.getObj())
+        return  reduced_var_dict
 
 
     # execution method of the heuristic
     def heurexec(self, heurtiming, nodeinfeasible):
         delta = self.options['delta']
         fix_integers = self.options['fix_integers']
-        enlarged = self.options['enlargement']
 
         logging.info(">>>> Call feasible rounding heuristic at a node with depth %d" % (self.model.getDepth()))
         logging.info(">>>> Build inner parallel set")
@@ -126,15 +138,9 @@ class feasiblerounding(Heur):
         linear_rows = self.model.getLPRowsData()
 
         # Post-Processing -> fix rounded integer values and optimize
-        post_model = Model()
-        post_var_dict = dict()
-        for var in variables:
-            lower = var.getLbLocal()
-            upper = var.getUbLocal()
-            if var.vtype() != 'CONTINUOUS':
-                local_rounding = int(round(ips_model.getVal(ips_vars[var.name])))
-                lower = upper = local_rounding
-            post_var_dict[var.name] = post_model.addVar(name=var.name, vtype='CONTINUOUS', lb=lower, ub=upper, obj=var.getObj())
+        reduced_model = Model('reduced_model')
+        reduced_model_vars = self.add_reduced_vars(reduced_model, ips_model, ips_vars)
+
         for lrow in linear_rows:
             vlist = [col.getVar() for col in lrow.getCols()]
             clist = lrow.getVals()
@@ -142,15 +148,15 @@ class feasiblerounding(Heur):
             lhs = lrow.getLhs()
             rhs = lrow.getRhs()
             # add constraint
-            post_model.addCons(
-                lhs <= (quicksum(post_var_dict[vlist[i].name] * clist[i] for i in range(len(vlist))) + const <= rhs))
+            reduced_model.addCons(
+                lhs <= (quicksum(reduced_model_vars[vlist[i].name] * clist[i] for i in range(len(vlist))) + const <= rhs))
 
-        post_model.optimize()
+        reduced_model.optimize()
 
         # Add Solution
         sol = self.model.createSol()
         for v in variables:
-            val_post = post_model.getVal(post_var_dict[v.name])
+            val_post = reduced_model.getVal(reduced_model_vars[v.name])
             self.model.setSolVal(sol, v, val_post)
 
         feasible_rounding = self.model.checkSol(sol)
@@ -165,7 +171,7 @@ class feasiblerounding(Heur):
         logging.debug('Maximum violation of LP row: ' + str(self.get_lp_violation(sol)))
 
         del ips_model
-        del post_model
+        del reduced_model
 
         if accepted_solution:
             return {"result": SCIP_RESULT.FOUNDSOL}
@@ -201,8 +207,8 @@ def test_granularity_rootnode():
 
 def test_heur():
     m = Model()
-    options = {'enlarged': True, 'post_processing' : True}
-    heuristic = feasiblerounding()
+    options = {'post_processing' : True}
+    heuristic = feasiblerounding(options)
     m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
                   freq=5)
     # m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/mik.250-1-100.1.mps') # implicit integer variable
