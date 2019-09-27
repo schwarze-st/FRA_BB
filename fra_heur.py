@@ -147,8 +147,23 @@ class feasiblerounding(Heur):
             var_value = model.getVal(vars[v.name])
             sol[v.name] = var_value
         return sol
-        
 
+    def try_sol(self, model, sol_dict):
+        original_vars = self.model.getVars(transformed=True)
+        sol = self.model.createSol()
+        for v in original_vars:
+            self.model.setSolVal(sol, v, sol_dict[v.name])
+
+        rounding_feasible = self.model.checkSol(sol)
+        solution_accepted = self.model.trySol(sol)
+
+        if rounding_feasible == 0:
+            logging.warning(">>>> ips feasible, but no feasible rounding")
+        logging.info(">>>> accepted solution? %s" % ("yes" if solution_accepted == 1 else "no"))
+
+        logging.debug('Maximum violation of LP row: ' + str(self.get_lp_violation(sol)))
+
+        return solution_accepted
 
     # execution method of the heuristic
     def heurexec(self, heurtiming, nodeinfeasible):
@@ -166,39 +181,28 @@ class feasiblerounding(Heur):
 
         logging.info(">>>> Optimize over EIPS")
         ips_model.optimize()
-        sol_FRA = self.get_sol(ips_vars, ips_model)
-        self.round_sol(sol_FRA)
+        if ips_model.getStatus() == 'optimal':
+            sol_FRA = self.get_sol(ips_vars, ips_model)
+            self.round_sol(sol_FRA)
 
-        # Post-Processing -> fix rounded integer values and optimize
-        reduced_model = Model('reduced_model')
-        reduced_model_vars = self.add_reduced_vars(reduced_model, sol_FRA)
-        self.add_model_constraints(reduced_model,reduced_model_vars)
-        reduced_model.optimize()
-        sol_post_processing = self.get_sol(reduced_model_vars, reduced_model)
-        
-        # Add Solution
-        sol = self.model.createSol()
-        for v in variables:
-            val_post = reduced_model.getVal(reduced_model_vars[v.name])
-            self.model.setSolVal(sol, v, val_post)
+            # Post-Processing -> fix rounded integer values and optimize
+            reduced_model = Model('reduced_model')
+            reduced_model_vars = self.add_reduced_vars(reduced_model, sol_FRA)
+            self.add_model_constraints(reduced_model,reduced_model_vars)
+            reduced_model.optimize()
+            sol_post_processing = self.get_sol(reduced_model_vars, reduced_model)
 
-        feasible_rounding = self.model.checkSol(sol)
-        accepted_solution = self.model.trySol(sol)
+            # Add Solution
+            solution_accepted = self.try_sol(ips_model, sol_post_processing)
+            del reduced_model
+            del ips_model
 
-        logging.debug(">>>> feasible solution? %s" % ("yes" if feasible_rounding == 1 else "no"))
-        logging.info(">>>> accepted solution? %s" % ("yes" if accepted_solution == 1 else "no"))
-
-        if ips_model.getStatus() == 'optimal' and feasible_rounding == 0:
-            logging.warning("ips feasible, but no feasible rounding")
-
-        logging.debug('Maximum violation of LP row: ' + str(self.get_lp_violation(sol)))
-
-        del ips_model
-        del reduced_model
-
-        if accepted_solution:
-            return {"result": SCIP_RESULT.FOUNDSOL}
+            if solution_accepted:
+                return {"result": SCIP_RESULT.FOUNDSOL}
+            else:
+                return {"result": SCIP_RESULT.DIDNOTFIND}
         else:
+            del ips_model
             return {"result": SCIP_RESULT.DIDNOTFIND}
 
 
