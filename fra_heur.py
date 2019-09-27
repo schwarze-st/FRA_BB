@@ -66,6 +66,22 @@ class feasiblerounding(Heur):
                 fixing_enlargement += abs(clist[i])
         return fixing_enlargement
 
+    def add_model_constraints(self, model, var_dict):
+
+        linear_rows = self.model.getLPRowsData()
+
+        for lrow in linear_rows:
+            vlist = [col.getVar() for col in lrow.getCols()]
+            clist = lrow.getVals()
+            const = lrow.getConstant()
+            lhs = lrow.getLhs()
+            rhs = lrow.getRhs()
+            # add constraint
+            model.addCons( lhs <=
+                           (quicksum( var_dict[vlist[i].name] * clist[i] for i in range(len(vlist))) + const
+                            <= rhs))
+
+
     def add_ips_constraints(self, ips_model, var_dict):
         linear_rows = self.model.getLPRowsData()
 
@@ -135,22 +151,10 @@ class feasiblerounding(Heur):
         logging.info(">>>> Optimize over EIPS")
         ips_model.optimize()
 
-        linear_rows = self.model.getLPRowsData()
-
         # Post-Processing -> fix rounded integer values and optimize
         reduced_model = Model('reduced_model')
         reduced_model_vars = self.add_reduced_vars(reduced_model, ips_model, ips_vars)
-
-        for lrow in linear_rows:
-            vlist = [col.getVar() for col in lrow.getCols()]
-            clist = lrow.getVals()
-            const = lrow.getConstant()
-            lhs = lrow.getLhs()
-            rhs = lrow.getRhs()
-            # add constraint
-            reduced_model.addCons(
-                lhs <= (quicksum(reduced_model_vars[vlist[i].name] * clist[i] for i in range(len(vlist))) + const <= rhs))
-
+        self.add_model_constraints(reduced_model,reduced_model_vars)
         reduced_model.optimize()
 
         # Add Solution
