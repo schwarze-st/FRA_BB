@@ -10,6 +10,7 @@ from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_HEURTIMING, quicksum, Expr
 #
 
 
+
 class feasiblerounding(Heur):
 
     def __init__(self, options = {}):
@@ -18,6 +19,7 @@ class feasiblerounding(Heur):
                         'fix_integers': True, 'delta' : 0.999}
         for key in options:
             self.options[key] = options[key]
+
 
     def add_vars_and_bounds(self, model):
 
@@ -120,18 +122,27 @@ class feasiblerounding(Heur):
     def heurexitsol(self):
         print(">>>> call heurexitsol()")
 
-    def add_reduced_vars(self, reduced_model, ips_model, ips_vars):
+    def add_reduced_vars(self, reduced_model, sol_FRA):
         reduced_var_dict = {}
         original_vars = self.model.getVars(transformed=True)
         for var in original_vars:
             lower = var.getLbLocal()
             upper = var.getUbLocal()
             if var.vtype() != 'CONTINUOUS':
-                local_rounding = int(round(ips_model.getVal(ips_vars[var.name])))
-                lower = upper = local_rounding
+                lower = upper = sol_FRA[var.name]
             reduced_var_dict[var.name] = reduced_model.addVar(name=var.name, vtype='CONTINUOUS', lb=lower, ub=upper,
                                                            obj=var.getObj())
         return  reduced_var_dict
+
+    def get_rounded_sol(self, ips_vars, ips_model):
+        rounded_sol = {}
+        original_vars = self.model.getVars(transformed=True)
+        for v in original_vars:
+            var_value = ips_model.getVal(ips_vars[v.name])
+            if v.vtype() != 'CONTINUOUS':
+                var_value = int(round(var_value))
+            rounded_sol[v.name] =  var_value
+        return rounded_sol
 
 
     # execution method of the heuristic
@@ -150,10 +161,11 @@ class feasiblerounding(Heur):
 
         logging.info(">>>> Optimize over EIPS")
         ips_model.optimize()
+        sol_FRA = self.get_rounded_sol(ips_vars, ips_model)
 
         # Post-Processing -> fix rounded integer values and optimize
         reduced_model = Model('reduced_model')
-        reduced_model_vars = self.add_reduced_vars(reduced_model, ips_model, ips_vars)
+        reduced_model_vars = self.add_reduced_vars(reduced_model, sol_FRA)
         self.add_model_constraints(reduced_model,reduced_model_vars)
         reduced_model.optimize()
 
