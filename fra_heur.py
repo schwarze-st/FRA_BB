@@ -15,7 +15,7 @@ class feasiblerounding(Heur):
 
     def __init__(self, options = {}):
 
-        self.options = {'enlargement': True, 'post_processing': True,
+        self.options = {'enlargement': True, 'fix_and_optimize': True,
                         'fix_integers': True, 'delta' : 0.999}
         for key in options:
             self.options[key] = options[key]
@@ -185,15 +185,15 @@ class feasiblerounding(Heur):
             sol_FRA = self.get_sol(ips_vars, ips_model)
             self.round_sol(sol_FRA)
 
-            # Post-Processing -> fix rounded integer values and optimize
-            reduced_model = Model('reduced_model')
-            reduced_model_vars = self.add_reduced_vars(reduced_model, sol_FRA)
-            self.add_model_constraints(reduced_model,reduced_model_vars)
-            reduced_model.optimize()
-            sol_post_processing = self.get_sol(reduced_model_vars, reduced_model)
+            if self.options['fix_and_optimize']:
+                reduced_model = Model('reduced_model')
+                reduced_model_vars = self.add_reduced_vars(reduced_model, sol_FRA)
+                self.add_model_constraints(reduced_model,reduced_model_vars)
+                reduced_model.optimize()
+                sol_FRA = self.get_sol(reduced_model_vars, reduced_model)
 
             # Add Solution
-            solution_accepted = self.try_sol(ips_model, sol_post_processing)
+            solution_accepted = self.try_sol(ips_model, sol_FRA)
             del reduced_model
             del ips_model
 
@@ -234,7 +234,7 @@ def test_granularity_rootnode():
 
 def test_heur():
     m = Model()
-    options = {'post_processing' : True}
+    options = {'fix_and_optimize' : True}
     heuristic = feasiblerounding(options)
     m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
                   freq=5)
