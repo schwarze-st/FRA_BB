@@ -134,15 +134,20 @@ class feasiblerounding(Heur):
                                                            obj=var.getObj())
         return  reduced_var_dict
 
-    def get_rounded_sol(self, ips_vars, ips_model):
-        rounded_sol = {}
+    def round_sol(self, sol):
         original_vars = self.model.getVars(transformed=True)
         for v in original_vars:
-            var_value = ips_model.getVal(ips_vars[v.name])
             if v.vtype() != 'CONTINUOUS':
-                var_value = int(round(var_value))
-            rounded_sol[v.name] =  var_value
-        return rounded_sol
+                sol[v.name] = int(round(sol[v.name]))
+    
+    def get_sol(self, vars, model):
+        sol = {}
+        original_vars = self.model.getVars(transformed=True)
+        for v in original_vars:
+            var_value = model.getVal(vars[v.name])
+            sol[v.name] = var_value
+        return sol
+        
 
 
     # execution method of the heuristic
@@ -161,14 +166,16 @@ class feasiblerounding(Heur):
 
         logging.info(">>>> Optimize over EIPS")
         ips_model.optimize()
-        sol_FRA = self.get_rounded_sol(ips_vars, ips_model)
+        sol_FRA = self.get_sol(ips_vars, ips_model)
+        self.round_sol(sol_FRA)
 
         # Post-Processing -> fix rounded integer values and optimize
         reduced_model = Model('reduced_model')
         reduced_model_vars = self.add_reduced_vars(reduced_model, sol_FRA)
         self.add_model_constraints(reduced_model,reduced_model_vars)
         reduced_model.optimize()
-
+        sol_post_processing = self.get_sol(reduced_model_vars, reduced_model)
+        
         # Add Solution
         sol = self.model.createSol()
         for v in variables:
