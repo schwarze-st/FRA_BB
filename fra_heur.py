@@ -148,7 +148,7 @@ class feasiblerounding(Heur):
             sol[v.name] = var_value
         return sol
 
-    def try_sol(self, model, sol_dict):
+    def try_sol(self, sol_dict):
         original_vars = self.model.getVars(transformed=True)
         sol = self.model.createSol()
         for v in original_vars:
@@ -165,15 +165,25 @@ class feasiblerounding(Heur):
 
         return solution_accepted
 
+    def fix_and_optimize(self, sol_FRA):
+
+        reduced_model = Model('reduced_model')
+        reduced_model_vars = self.add_reduced_vars(reduced_model, sol_FRA)
+        self.add_model_constraints(reduced_model, reduced_model_vars)
+        reduced_model.optimize()
+        sol_FRA = self.get_sol(reduced_model_vars, reduced_model)
+        del reduced_model
+
+        return sol_FRA
+
+
+
     # execution method of the heuristic
     def heurexec(self, heurtiming, nodeinfeasible):
-        delta = self.options['delta']
-        fix_integers = self.options['fix_integers']
 
         logging.info(">>>> Call feasible rounding heuristic at a node with depth %d" % (self.model.getDepth()))
         logging.info(">>>> Build inner parallel set")
 
-        variables = self.model.getVars(transformed=True)
         ips_model = Model("ips")
         ips_vars = self.add_vars_and_bounds(ips_model)
         self.add_objective(ips_model,ips_vars)
@@ -186,15 +196,9 @@ class feasiblerounding(Heur):
             self.round_sol(sol_FRA)
 
             if self.options['fix_and_optimize']:
-                reduced_model = Model('reduced_model')
-                reduced_model_vars = self.add_reduced_vars(reduced_model, sol_FRA)
-                self.add_model_constraints(reduced_model,reduced_model_vars)
-                reduced_model.optimize()
-                sol_FRA = self.get_sol(reduced_model_vars, reduced_model)
+                sol_FRA = self.fix_and_optimize(sol_FRA)
 
-            # Add Solution
-            solution_accepted = self.try_sol(ips_model, sol_FRA)
-            del reduced_model
+            solution_accepted = self.try_sol(sol_FRA)
             del ips_model
 
             if solution_accepted:
