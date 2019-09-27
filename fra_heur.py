@@ -15,13 +15,12 @@ class feasiblerounding(Heur):
 
     def __init__(self, options = {}):
 
-        self.options = {'enlargement': True, 'fix_and_optimize': True,
-                        'fix_integers': True, 'delta' : 0.999}
+        self.options = {'mode': ['original', 'deep_fixing'], 'delta' : 0.999}
         for key in options:
             self.options[key] = options[key]
 
 
-    def add_vars_and_bounds(self, model):
+    def add_vars_and_bounds(self, model, mode):
 
         original_vars = self.model.getVars(transformed=True)
         var_dict = dict()
@@ -29,7 +28,7 @@ class feasiblerounding(Heur):
             lower = var.getLbLocal()
             upper = var.getUbLocal()
             if var.vtype() != 'CONTINUOUS':
-                if self.options['fix_integers'] and round(var.getLPSol()) == var.getLPSol() and var.vtype() == 'BINARY':
+                if mode == 'deep_fixing' and round(var.getLPSol()) == var.getLPSol() and var.vtype() == 'BINARY':
                     lower = upper = var.getLPSol()
                 else:
                     if lower is not None:
@@ -40,15 +39,20 @@ class feasiblerounding(Heur):
 
         return var_dict
 
+    def get_obj_value(self, sol_dict):
+
+        variables = self.model.getVars(transformed=True)
+        obj_val = sum([v.getObj()*sol_dict[v.name] for v in variables])
+        return obj_val
+
+
     def add_objective(self, model, var_dict):
 
         obj_sub = Expr()
         variables = self.model.getVars(transformed=True)
         zf_sense = self.model.getObjectiveSense()
         for v in variables:
-            coefficient = v.getObj()
-            if coefficient != 0:
-                obj_sub += coefficient * var_dict[v.name]
+            obj_sub += v.getObj() * var_dict[v.name]
         if obj_sub.degree() != 1:
             logging.warning("Objective function is empty")
         obj_sub.normalize()
@@ -84,7 +88,7 @@ class feasiblerounding(Heur):
                             <= rhs))
 
 
-    def add_ips_constraints(self, ips_model, var_dict):
+    def add_ips_constraints(self, ips_model, var_dict, mode):
         linear_rows = self.model.getLPRowsData()
 
         for lrow in linear_rows:
@@ -93,7 +97,7 @@ class feasiblerounding(Heur):
             const = lrow.getConstant()
 
             beta = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype() != 'CONTINUOUS')
-            if self.options['fix_integers']:
+            if mode=='deep_fixing':
                 fixing_enlargement = self.compute_fixing_enlargement(vlist, clist)
                 beta = beta - fixing_enlargement
             if self.enlargement_possible(vlist, clist):
@@ -173,41 +177,60 @@ class feasiblerounding(Heur):
         reduced_model.optimize()
         sol_FRA = self.get_sol(reduced_model_vars, reduced_model)
         del reduced_model
-
         return sol_FRA
 
+    def build_ips(self, mode):
+        ips_model = Model("ips")
+        ips_vars = self.add_vars_and_bounds(ips_model, mode)
+        self.add_ips_constraints(ips_model, ips_vars, mode)
+        self.add_objective(ips_model, ips_vars)
+        return ips_model, ips_vars
 
+    def get_best_sol(self, sol_dict, val_dict):
+        if not sol_dict:
+            return {}
+        if self.model.getObjectiveSense() == 'minimize':
+            best_sol = sol_dict[min(val_dict, key=val_dict.get)]
+        elif self.model.getObjectiveSense() == 'maximize':
+            best_sol = sol_dict[max(val_dict, key=val_dict.get)]
+        else:
+            logging.warning('Unknown objective sense. Expected \'minimize\'or \' maximize \' ')
+        return best_sol
 
     # execution method of the heuristic
     def heurexec(self, heurtiming, nodeinfeasible):
 
         logging.info(">>>> Call feasible rounding heuristic at a node with depth %d" % (self.model.getDepth()))
         logging.info(">>>> Build inner parallel set")
+        sol_dict = {}
+        val_dict = {}
 
-        ips_model = Model("ips")
-        ips_vars = self.add_vars_and_bounds(ips_model)
-        self.add_objective(ips_model,ips_vars)
-        self.add_ips_constraints(ips_model, ips_vars)
+        for mode in self.options['mode']:
+            if not (mode in ['original', 'deep_fixing']):
+                logging.warning('Mode must be original or deep fixing, but is '+ mode)
+            ips_model, ips_vars = self.build_ips(mode)
+            logging.info(">>>> Optimize over EIPS")
+            ips_model.optimize()
 
-        logging.info(">>>> Optimize over EIPS")
-        ips_model.optimize()
-        if ips_model.getStatus() == 'optimal':
-            sol_FRA = self.get_sol(ips_vars, ips_model)
-            self.round_sol(sol_FRA)
-
-            if self.options['fix_and_optimize']:
-                sol_FRA = self.fix_and_optimize(sol_FRA)
-
-            solution_accepted = self.try_sol(sol_FRA)
+            if ips_model.getStatus() == 'optimal':
+                sol_FRA_current_mode = self.get_sol(ips_vars, ips_model)
+                self.round_sol(sol_FRA_current_mode)
+                sol_dict[mode] = self.fix_and_optimize(sol_FRA_current_mode)
+                val_dict[mode] = self.get_obj_value(sol_dict[mode])
             del ips_model
+            del ips_vars
+        logging.info(val_dict)
+        sol_FRA = self.get_best_sol(sol_dict, val_dict)
 
+        if sol_FRA:
+            solution_accepted = self.try_sol(sol_FRA)
             if solution_accepted:
                 return {"result": SCIP_RESULT.FOUNDSOL}
             else:
                 return {"result": SCIP_RESULT.DIDNOTFIND}
         else:
-            del ips_model
             return {"result": SCIP_RESULT.DIDNOTFIND}
+
 
 
 def test_granularity_rootnode():
@@ -238,7 +261,7 @@ def test_granularity_rootnode():
 
 def test_heur():
     m = Model()
-    options = {'fix_and_optimize' : True}
+    options = {'mode':['original','deep_fixing']}
     heuristic = feasiblerounding(options)
     m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
                   freq=5)
