@@ -4,20 +4,65 @@ import os
 import logging
 
 from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_HEURTIMING, quicksum, Expr
+epsilon = 1E-7
+
 
 #
 # heuristic: feasible rounding approach
 #
 
+def get_switching_points(int_sol1, int_sol2):
+    switching_points = []
 
+    for j in range(len(int_sol1)):
+        eta_j = int_sol2[j] - int_sol1[j]
+        lower = math.ceil(int_sol1[j] + min(0, eta_j) - 1 / 2)
+        upper = math.floor(int_sol1[j] + max(0, eta_j) - 1 / 2)
+        logging.debug("lower bound for l: " + str(lower) + " upper bound for l: " + str(upper))
+        for l in range(lower, upper+1):
+            switching_points.append((1 / 2 - int_sol1[j] + l) / eta_j)
+    return sorted(set(switching_points))
 
 class feasiblerounding(Heur):
 
     def __init__(self, options={}):
 
-        self.options = {'mode': ['original', 'deep_fixing'], 'delta': 0.999}
+        self.options = {'mode': ['original', 'deep_fixing'], 'delta' : 0.999, 'line_search' : True}
+
         for key in options:
             self.options[key] = options[key]
+
+    def get_line_search_rounding(self, rel_sol_dict, ips_sol_dict):
+
+        original_vars = self.model.getVars(transformed=True)
+        rel_int_sol = self.get_value_list_of_int_vars(rel_sol_dict)
+        ips_int_sol = self.get_value_list_of_int_vars(ips_sol_dict)
+        switching_points = get_switching_points(rel_int_sol, ips_int_sol)
+        logging.info(switching_points)
+        feasible = False
+        i = 0
+        while not feasible:
+            t = switching_points[i]
+            sol_dict = {}
+            for v in original_vars:
+                sol_dict[v.name] = rel_sol_dict[v.name] + t * (ips_sol_dict[v.name] - rel_sol_dict[v.name])
+            self.round_sol(sol_dict)
+            feasible = self.sol_is_feasible(sol_dict)
+            i = i+1
+
+        logging.info('Found feasible point for t = ' + str(t))
+
+        return sol_dict
+
+
+    def get_value_list_of_int_vars(self, sol_dict):
+
+        int_values = []
+        original_vars = self.model.getVars(transformed=True)
+        for var in original_vars:
+            if var.vtype() != 'CONTINUOUS':
+                int_values.append(sol_dict[var.name])
+        return int_values
 
 
     def add_vars_and_bounds(self, model, mode):
@@ -112,12 +157,12 @@ class feasiblerounding(Heur):
     def get_lp_violation(self, sol):
         local_linear_rows = self.model.getLPRowsData()
         vio = []
-        if vio:
+        if local_linear_rows:
             for row in local_linear_rows:
                 vio.append(self.model.getRowSolFeas(row, sol))
             return min(vio)
-        else:
-            return 0
+        return 0
+
 
     def heurinitsol(self):
         print(">>>> call heurinitsol()")
@@ -143,7 +188,7 @@ class feasiblerounding(Heur):
             if v.vtype() != 'CONTINUOUS':
                 sol[v.name] = int(round(sol[v.name]))
     
-    def get_sol(self, vars, model):
+    def get_sol_submodel(self, vars, model):
         sol = {}
         original_vars = self.model.getVars(transformed=True)
         for v in original_vars:
@@ -151,7 +196,27 @@ class feasiblerounding(Heur):
             sol[v.name] = var_value
         return sol
 
-    def try_sol(self, sol_dict):
+    def get_sol_relaxation(self):
+        sol = {}
+        original_vars = self.model.getVars(transformed=True)
+        for v in original_vars:
+            var_value = self.model.getVal(v)
+            sol[v.name] = var_value
+        return sol
+
+
+    def sol_is_feasible(self, sol_dict):
+        original_vars = self.model.getVars(transformed=True)
+        sol = self.model.createSol()
+        for v in original_vars:
+            self.model.setSolVal(sol, v, sol_dict[v.name])
+
+        rounding_feasible = self.model.checkSol(sol)
+
+        return rounding_feasible
+
+
+    def sol_is_accepted(self, sol_dict):
         original_vars = self.model.getVars(transformed=True)
         sol = self.model.createSol()
         for v in original_vars:
@@ -174,7 +239,7 @@ class feasiblerounding(Heur):
         self.add_model_constraints(reduced_model, reduced_model_vars)
         self.add_objective(reduced_model, reduced_model_vars)
         reduced_model.optimize()
-        sol_FRA = self.get_sol(reduced_model_vars, reduced_model)
+        sol_FRA = self.get_sol_submodel(reduced_model_vars, reduced_model)
         del reduced_model
         return sol_FRA
 
@@ -203,6 +268,8 @@ class feasiblerounding(Heur):
         logging.info(">>>> Build inner parallel set")
         sol_dict = {}
         val_dict = {}
+        if self.options['line_search']:
+            rel_sol_dict = self.get_sol_relaxation()
 
         for mode in self.options['mode']:
             if not (mode in ['original', 'deep_fixing']):
@@ -212,17 +279,28 @@ class feasiblerounding(Heur):
             ips_model.optimize()
 
             if ips_model.getStatus() == 'optimal':
-                sol_FRA_current_mode = self.get_sol(ips_vars, ips_model)
+
+                sol_FRA_current_mode = self.get_sol_submodel(ips_vars, ips_model)
+
+                if self.options['line_search']:
+                    line_sarch_sol = self.get_line_search_rounding(rel_sol_dict, sol_FRA_current_mode)
+                    label_sol = mode + '_line_search'
+                    sol_dict[label_sol] = self.fix_and_optimize(line_sarch_sol)
+                    val_dict[label_sol] = self.get_obj_value(sol_dict[label_sol])
+
+                label_sol = mode
                 self.round_sol(sol_FRA_current_mode)
-                sol_dict[mode] = self.fix_and_optimize(sol_FRA_current_mode)
-                val_dict[mode] = self.get_obj_value(sol_dict[mode])
+                sol_dict[label_sol] = self.fix_and_optimize(sol_FRA_current_mode)
+                val_dict[label_sol] = self.get_obj_value(sol_dict[mode])
+                logging.info(val_dict)
             del ips_model
             del ips_vars
         logging.info(val_dict)
         sol_FRA = self.get_best_sol(sol_dict, val_dict)
 
+
         if sol_FRA:
-            solution_accepted = self.try_sol(sol_FRA)
+            solution_accepted = self.sol_is_accepted(sol_FRA)
             if solution_accepted:
                 return {"result": SCIP_RESULT.FOUNDSOL}
             else:
@@ -271,6 +349,6 @@ def test_heur():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.INFO)
     test_heur()
     # test_granularity_rootnode()
