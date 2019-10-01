@@ -225,7 +225,7 @@ class feasiblerounding(Heur):
 
     def sol_satisfies_constrs(self, sol_dict):
         sol = self.create_sol(sol_dict)
-        rounding_feasible = (self.get_lp_violation(sol)>=FEAS_TOL)
+        rounding_feasible = (self.get_lp_violation(sol)>=-FEAS_TOL)
         return rounding_feasible
 
 
