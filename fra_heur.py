@@ -13,9 +13,9 @@ from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_HEURTIMING, quicksum, Expr
 
 class feasiblerounding(Heur):
 
-    def __init__(self, options = {}):
+    def __init__(self, options={}):
 
-        self.options = {'mode': ['original', 'deep_fixing'], 'delta' : 0.999}
+        self.options = {'mode': ['original', 'deep_fixing'], 'delta': 0.999}
         for key in options:
             self.options[key] = options[key]
 
@@ -40,14 +40,11 @@ class feasiblerounding(Heur):
         return var_dict
 
     def get_obj_value(self, sol_dict):
-
         variables = self.model.getVars(transformed=True)
         obj_val = sum([v.getObj()*sol_dict[v.name] for v in variables])
         return obj_val
 
-
     def add_objective(self, model, var_dict):
-
         obj_sub = Expr()
         variables = self.model.getVars(transformed=True)
         zf_sense = self.model.getObjectiveSense()
@@ -63,7 +60,7 @@ class feasiblerounding(Heur):
             clist[i].is_integer() for i in range(len(clist)))
 
     def is_fixed(self, var):
-        return (var.vtype()=='BINARY' and round(var.getLPSol()) == var.getLPSol())
+        return var.vtype() == 'BINARY' and round(var.getLPSol()) == var.getLPSol()
 
     def compute_fixing_enlargement(self, vlist, clist):
         fixing_enlargement = 0
@@ -87,7 +84,6 @@ class feasiblerounding(Heur):
                            (quicksum( var_dict[vlist[i].name] * clist[i] for i in range(len(vlist))) + const
                             <= rhs))
 
-
     def add_ips_constraints(self, ips_model, var_dict, mode):
         linear_rows = self.model.getLPRowsData()
 
@@ -97,7 +93,7 @@ class feasiblerounding(Heur):
             const = lrow.getConstant()
 
             beta = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype() != 'CONTINUOUS')
-            if mode=='deep_fixing':
+            if mode == 'deep_fixing':
                 fixing_enlargement = self.compute_fixing_enlargement(vlist, clist)
                 beta = beta - fixing_enlargement
             if self.enlargement_possible(vlist, clist):
@@ -116,9 +112,12 @@ class feasiblerounding(Heur):
     def get_lp_violation(self, sol):
         local_linear_rows = self.model.getLPRowsData()
         vio = []
-        for row in local_linear_rows:
-            vio.append(self.model.getRowSolFeas(row, sol))
-        return min(vio)
+        if vio:
+            for row in local_linear_rows:
+                vio.append(self.model.getRowSolFeas(row, sol))
+            return min(vio)
+        else:
+            return 0
 
     def heurinitsol(self):
         print(">>>> call heurinitsol()")
@@ -170,10 +169,10 @@ class feasiblerounding(Heur):
         return solution_accepted
 
     def fix_and_optimize(self, sol_FRA):
-
         reduced_model = Model('reduced_model')
         reduced_model_vars = self.add_reduced_vars(reduced_model, sol_FRA)
         self.add_model_constraints(reduced_model, reduced_model_vars)
+        self.add_objective(reduced_model, reduced_model_vars)
         reduced_model.optimize()
         sol_FRA = self.get_sol(reduced_model_vars, reduced_model)
         del reduced_model
@@ -207,7 +206,7 @@ class feasiblerounding(Heur):
 
         for mode in self.options['mode']:
             if not (mode in ['original', 'deep_fixing']):
-                logging.warning('Mode must be original or deep fixing, but is '+ mode)
+                logging.warning('Mode must be original or deep fixing, but is ' + mode)
             ips_model, ips_vars = self.build_ips(mode)
             logging.info(">>>> Optimize over EIPS")
             ips_model.optimize()
@@ -266,7 +265,7 @@ def test_heur():
     m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
                   freq=5)
     # m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/mik.250-1-100.1.mps') # implicit integer variable
-    m.readProblem('50v-10.mps') # ERROR SIGSEGV
+    m.readProblem('50v-10.mps')
     m.optimize()
     del m
 
