@@ -160,9 +160,11 @@ class feasiblerounding(Heur):
     def get_lp_violation(self, sol):
         local_linear_rows = self.model.getLPRowsData()
         vio = []
-        for row in local_linear_rows:
-            vio.append(self.model.getRowSolFeas(row, sol))
-        return min(vio)
+        if local_linear_rows:
+            for row in local_linear_rows:
+                vio.append(self.model.getRowSolFeas(row, sol))
+            return min(vio)
+        return 0
 
     def heurinitsol(self):
         print(">>>> call heurinitsol()")
