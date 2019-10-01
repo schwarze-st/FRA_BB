@@ -353,10 +353,10 @@ def test_heur():
     m = Model()
     options = {'mode':['original','deep_fixing']}
     heuristic = feasiblerounding(options)
-    m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
+    m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.DURINGLPLOOP,
                   freq=5)
     # m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/mik.250-1-100.1.mps') # implicit integer variable
-    m.readProblem('mik.250-1-100.1.mps') # ERROR SIGSEGV
+    m.readProblem('n15-3.mps') # ERROR SIGSEGV
     m.optimize()
     del m
 
