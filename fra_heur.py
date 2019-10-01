@@ -4,7 +4,7 @@ import os
 import logging
 
 from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_HEURTIMING, quicksum, Expr
-epsilon = 1E-7
+FEAS_TOL = 1E-6
 
 
 #
@@ -12,13 +12,12 @@ epsilon = 1E-7
 #
 
 def get_switching_points(int_sol1, int_sol2):
-    switching_points = []
+    switching_points = [0,1]
 
     for j in range(len(int_sol1)):
         eta_j = int_sol2[j] - int_sol1[j]
         lower = math.ceil(int_sol1[j] + min(0, eta_j) - 1 / 2)
         upper = math.floor(int_sol1[j] + max(0, eta_j) - 1 / 2)
-        logging.debug("lower bound for l: " + str(lower) + " upper bound for l: " + str(upper))
         for l in range(lower, upper+1):
             switching_points.append((1 / 2 - int_sol1[j] + l) / eta_j)
     return sorted(set(switching_points))
@@ -31,6 +30,15 @@ class feasiblerounding(Heur):
         for key in options:
             self.options[key] = options[key]
 
+    def create_sol(self, sol_dict):
+
+        original_vars = self.model.getVars(transformed=True)
+        sol = self.model.createSol()
+        for v in original_vars:
+            self.model.setSolVal(sol, v, sol_dict[v.name])
+        return sol
+
+
     def get_line_search_rounding(self, rel_sol_dict, ips_sol_dict):
 
         original_vars = self.model.getVars(transformed=True)
@@ -40,16 +48,24 @@ class feasiblerounding(Heur):
         logging.info(switching_points)
         feasible = False
         i = 0
-        while not feasible:
+        while (not feasible) and (i<len(switching_points)):
             t = switching_points[i]
             sol_dict = {}
             for v in original_vars:
                 sol_dict[v.name] = rel_sol_dict[v.name] + t * (ips_sol_dict[v.name] - rel_sol_dict[v.name])
             self.round_sol(sol_dict)
-            feasible = self.sol_is_feasible(sol_dict)
+            feasible = self.sol_satisfies_constrs(sol_dict)
             i = i+1
 
-        logging.info('Found feasible point for t = ' + str(t))
+        if not feasible:
+            logging.warning("No feasible point found while iterating through switching points")
+            logging.warning("len switching points: " + str(len(switching_points)) + "current iteration" +  str(i))
+            sol = self.create_sol(sol_dict)
+            logging.warning("constraint violation is " + str(self.get_lp_violation(sol)))
+
+
+        else:
+            logging.info('Found feasible point for t = ' + str(t))
 
         return sol_dict
 
@@ -150,7 +166,7 @@ class feasiblerounding(Heur):
             else:
                 lhs = lrow.getLhs() + 0.5 * beta
                 rhs = lrow.getRhs() - 0.5 * beta
-            if lhs > (rhs + 10 ** (-6)):
+            if lhs > (rhs + FEAS_TOL):
                 logging.warning("Inner parallel set is empty (equality constrained)")
                 break
 
@@ -207,14 +223,9 @@ class feasiblerounding(Heur):
         return sol
 
 
-    def sol_is_feasible(self, sol_dict):
-        original_vars = self.model.getVars(transformed=True)
-        sol = self.model.createSol()
-        for v in original_vars:
-            self.model.setSolVal(sol, v, sol_dict[v.name])
-
-        rounding_feasible = self.model.checkSol(sol)
-
+    def sol_satisfies_constrs(self, sol_dict):
+        sol = self.create_sol(sol_dict)
+        rounding_feasible = (self.get_lp_violation(sol)>=FEAS_TOL)
         return rounding_feasible
 
 
@@ -345,7 +356,7 @@ def test_heur():
     m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
                   freq=5)
     # m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/mik.250-1-100.1.mps') # implicit integer variable
-    m.readProblem('50v-10.mps') # ERROR SIGSEGV
+    m.readProblem('mik.250-1-100.1.mps') # ERROR SIGSEGV
     m.optimize()
     del m
 
