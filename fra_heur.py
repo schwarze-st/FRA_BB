@@ -80,7 +80,6 @@ class feasiblerounding(Heur):
         return int_values
 
     def add_vars_and_bounds(self, model, mode):
-
         original_vars = self.model.getVars(transformed=True)
         var_dict = dict()
         for var in original_vars:
@@ -95,24 +94,13 @@ class feasiblerounding(Heur):
                     if upper is not None:
                         upper = math.floor(upper) + self.options['delta'] - 0.5
             var_dict[var.name] = model.addVar(name=var.name, vtype='CONTINUOUS', lb=lower, ub=upper, obj=var.getObj())
-
+        self.set_objective_sense(model)
         return var_dict
 
     def get_obj_value(self, sol_dict):
         variables = self.model.getVars(transformed=True)
         obj_val = sum([v.getObj()*sol_dict[v.name] for v in variables])
         return obj_val
-
-    def add_objective(self, model, var_dict):
-        obj_sub = Expr()
-        variables = self.model.getVars(transformed=True)
-        zf_sense = self.model.getObjectiveSense()
-        for v in variables:
-            obj_sub += v.getObj() * var_dict[v.name]
-        if obj_sub.degree() != 1:
-            logging.warning("Objective function is empty")
-        obj_sub.normalize()
-        model.setObjective(obj_sub, sense=zf_sense)
 
     def enlargement_possible(self, vlist, clist):
         return all(vlist[i].vtype() != 'CONTINUOUS' for i in range(len(clist))) and all(
@@ -129,9 +117,7 @@ class feasiblerounding(Heur):
         return fixing_enlargement
 
     def add_model_constraints(self, model, var_dict):
-
         linear_rows = self.model.getLPRowsData()
-
         for lrow in linear_rows:
             vlist = [col.getVar() for col in lrow.getCols()]
             clist = lrow.getVals()
@@ -193,7 +179,16 @@ class feasiblerounding(Heur):
                 lower = upper = sol_FRA[var.name]
             reduced_var_dict[var.name] = reduced_model.addVar(name=var.name, vtype='CONTINUOUS', lb=lower, ub=upper,
                                                            obj=var.getObj())
+        self.set_objective_sense(reduced_model)
         return  reduced_var_dict
+
+    def set_objective_sense(self, submodel):
+        if self.model.getObjectiveSense() == 'minimize':
+            submodel.setMinimize()
+        elif self.model.getObjectiveSense() == 'maximize':
+            submodel.setMaximize()
+        else:
+            logging.warning('Objective sense is not \'minimize\' or \'maximize\'')
 
     def round_sol(self, sol):
         original_vars = self.model.getVars(transformed=True)
@@ -243,7 +238,6 @@ class feasiblerounding(Heur):
         reduced_model = Model('reduced_model')
         reduced_model_vars = self.add_reduced_vars(reduced_model, sol_FRA)
         self.add_model_constraints(reduced_model, reduced_model_vars)
-        self.add_objective(reduced_model, reduced_model_vars)
         reduced_model.optimize()
         sol_FRA = self.get_sol_submodel(reduced_model_vars, reduced_model)
         del reduced_model
@@ -253,7 +247,6 @@ class feasiblerounding(Heur):
         ips_model = Model("ips")
         ips_vars = self.add_vars_and_bounds(ips_model, mode)
         self.add_ips_constraints(ips_model, ips_vars, mode)
-        self.add_objective(ips_model, ips_vars)
         return ips_model, ips_vars
 
     def get_best_sol(self, sol_dict, val_dict):
@@ -321,8 +314,8 @@ def test_heur():
     m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.DURINGLPLOOP,
                   freq=5)
     # m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/mik.250-1-100.1.mps') # implicit integer variable
-    # m.readProblem('50v-10.mps')
-    m.readProblem('Implementierung/n15-3.mps') # ERROR SIGSEGV
+    m.readProblem('Implementierung/50v-10.mps')
+    # m.readProblem('Implementierung/n15-3.mps') # ERROR SIGSEGV
     m.optimize()
     del m
 
