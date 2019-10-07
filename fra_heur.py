@@ -22,6 +22,7 @@ def get_switching_points(int_sol1, int_sol2):
             switching_points.append((1 / 2 - int_sol1[j] + l) / eta_j)
     return sorted(set(switching_points))
 
+
 class feasiblerounding(Heur):
 
     def __init__(self, options={}):
@@ -38,7 +39,6 @@ class feasiblerounding(Heur):
         for v in original_vars:
             self.model.setSolVal(sol, v, sol_dict[v.name])
         return sol
-
 
     def get_line_search_rounding(self, rel_sol_dict, ips_sol_dict):
 
@@ -70,7 +70,6 @@ class feasiblerounding(Heur):
 
         return sol_dict
 
-
     def get_value_list_of_int_vars(self, sol_dict):
 
         int_values = []
@@ -79,7 +78,6 @@ class feasiblerounding(Heur):
             if var.vtype() != 'CONTINUOUS':
                 int_values.append(sol_dict[var.name])
         return int_values
-
 
     def add_vars_and_bounds(self, model, mode):
 
@@ -179,7 +177,6 @@ class feasiblerounding(Heur):
             return min(vio)
         return 0
 
-
     def heurinitsol(self):
         print(">>>> call heurinitsol()")
 
@@ -220,12 +217,10 @@ class feasiblerounding(Heur):
             sol[v.name] = var_value
         return sol
 
-
     def sol_satisfies_constrs(self, sol_dict):
         sol = self.create_sol(sol_dict)
         rounding_feasible = (self.get_lp_violation(sol)>=-FEAS_TOL)
         return rounding_feasible
-
 
     def sol_is_accepted(self, sol_dict):
         original_vars = self.model.getVars(transformed=True)
@@ -309,7 +304,6 @@ class feasiblerounding(Heur):
         logging.info(val_dict)
         sol_FRA = self.get_best_sol(sol_dict, val_dict)
 
-
         if sol_FRA:
             solution_accepted = self.sol_is_accepted(sol_FRA)
             if solution_accepted:
@@ -320,33 +314,6 @@ class feasiblerounding(Heur):
             return {"result": SCIP_RESULT.DIDNOTFIND}
 
 
-
-def test_granularity_rootnode():
-    path_to_problems = '/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/'
-    os.chdir(path_to_problems)
-    problem_names = glob.glob("*.mps")
-    i = 0
-
-    for problem in problem_names:
-        # create model
-        m = Model()
-        # create and add heuristic to SCIP
-        heuristic = feasiblerounding()
-        m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
-                      freq=0)
-        m.setParam("limits/time", 45)
-        # read exemplary problem from file
-        print('>>>>> Working on Problem: ', problem, ', which is number ', i+1, 'of ', len(problem_names))
-        m.readProblem("".join([path_to_problems, problem]))
-        # optimize problem
-        m.optimize()
-        # free model explicitly
-        del m
-        i = i+1
-        if i > 10:
-            break
-
-
 def test_heur():
     m = Model()
     options = {'mode':['original','deep_fixing']}
@@ -355,12 +322,10 @@ def test_heur():
                   freq=5)
     # m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/mik.250-1-100.1.mps') # implicit integer variable
     # m.readProblem('50v-10.mps')
-    m.readProblem('n15-3.mps') # ERROR SIGSEGV
+    m.readProblem('Implementierung/n15-3.mps') # ERROR SIGSEGV
     m.optimize()
     del m
-
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     test_heur()
-    # test_granularity_rootnode()
