@@ -28,7 +28,6 @@ class feasiblerounding(Heur):
     def __init__(self, options={}):
 
         self.options = {'mode': ['original', 'deep_fixing'], 'delta' : 0.999, 'line_search' : True}
-
         for key in options:
             self.options[key] = options[key]
 
@@ -234,10 +233,15 @@ class feasiblerounding(Heur):
 
         return solution_accepted
 
+    def set_model_params(self,model):
+        model.setIntParam('display/freq', 0)
+        model.setBoolParam('display/relevantstats', False)
+
     def fix_and_optimize(self, sol_FRA):
         reduced_model = Model('reduced_model')
         reduced_model_vars = self.add_reduced_vars(reduced_model, sol_FRA)
         self.add_model_constraints(reduced_model, reduced_model_vars)
+        self.set_model_params(reduced_model)
         reduced_model.optimize()
         sol_FRA = self.get_sol_submodel(reduced_model_vars, reduced_model)
         del reduced_model
@@ -275,6 +279,7 @@ class feasiblerounding(Heur):
                 logging.warning('Mode must be original or deep fixing, but is ' + mode)
             ips_model, ips_vars = self.build_ips(mode)
             logging.info(">>>> Optimize over EIPS")
+            self.set_model_params(ips_model)
             ips_model.optimize()
 
             if ips_model.getStatus() == 'optimal':
@@ -296,7 +301,6 @@ class feasiblerounding(Heur):
             del ips_vars
         logging.info(val_dict)
         sol_FRA = self.get_best_sol(sol_dict, val_dict)
-
         if sol_FRA:
             solution_accepted = self.sol_is_accepted(sol_FRA)
             if solution_accepted:

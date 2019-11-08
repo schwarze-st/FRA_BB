@@ -9,14 +9,21 @@ def read_all_test_instances(folder):
     testset = [file for file in pyfiles]
     return testset
 
+def contains_equality_constraints(m):
+
+    return False
+
+
 def test_heur(model_path):
     m = Model()
     options = {'mode':['original','deep_fixing']}
     heuristic = feasiblerounding(options)
-    m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.DURINGLPLOOP,
+    m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
                   freq=5)
     m.readProblem(model_path)
-    m.setRealParam("limits/time",10.0)
-    m.setLongintParam("limits/nodes",10)
+    m.setIntParam('presolving/maxrestarts',0)
+    m.setRealParam("limits/time",15)
+    m.setLongintParam("limits/nodes",1)
     m.optimize()
+    m.printStatistics()
     del m
