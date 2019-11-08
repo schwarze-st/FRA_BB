@@ -305,20 +305,3 @@ class feasiblerounding(Heur):
                 return {"result": SCIP_RESULT.DIDNOTFIND}
         else:
             return {"result": SCIP_RESULT.DIDNOTFIND}
-
-
-def test_heur():
-    m = Model()
-    options = {'mode':['original','deep_fixing']}
-    heuristic = feasiblerounding(options)
-    m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.DURINGLPLOOP,
-                  freq=5)
-    # m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/mik.250-1-100.1.mps') # implicit integer variable
-    m.readProblem('Implementierung/50v-10.mps')
-    # m.readProblem('Implementierung/n15-3.mps') # ERROR SIGSEGV
-    m.optimize()
-    del m
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    test_heur()
