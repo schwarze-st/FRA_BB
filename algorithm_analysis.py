@@ -16,5 +16,7 @@ def test_heur(model_path):
     m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.DURINGLPLOOP,
                   freq=5)
     m.readProblem(model_path)
+    m.setRealParam("limits/time",10.0)
+    m.setLongintParam("limits/nodes",10)
     m.optimize()
     del m
