@@ -22,11 +22,13 @@ def get_switching_points(int_sol1, int_sol2):
             switching_points.append((1 / 2 - int_sol1[j] + l) / eta_j)
     return sorted(set(switching_points))
 
+
 class feasiblerounding(Heur):
 
-    def __init__(self, options = {}):
+    def __init__(self, options={}):
 
         self.options = {'mode': ['original', 'deep_fixing'], 'delta' : 0.999, 'line_search' : True}
+
         for key in options:
             self.options[key] = options[key]
 
@@ -37,7 +39,6 @@ class feasiblerounding(Heur):
         for v in original_vars:
             self.model.setSolVal(sol, v, sol_dict[v.name])
         return sol
-
 
     def get_line_search_rounding(self, rel_sol_dict, ips_sol_dict):
 
@@ -69,7 +70,6 @@ class feasiblerounding(Heur):
 
         return sol_dict
 
-
     def get_value_list_of_int_vars(self, sol_dict):
 
         int_values = []
@@ -79,9 +79,7 @@ class feasiblerounding(Heur):
                 int_values.append(sol_dict[var.name])
         return int_values
 
-
     def add_vars_and_bounds(self, model, mode):
-
         original_vars = self.model.getVars(transformed=True)
         var_dict = dict()
         for var in original_vars:
@@ -96,34 +94,20 @@ class feasiblerounding(Heur):
                     if upper is not None:
                         upper = math.floor(upper) + self.options['delta'] - 0.5
             var_dict[var.name] = model.addVar(name=var.name, vtype='CONTINUOUS', lb=lower, ub=upper, obj=var.getObj())
-
+        self.set_objective_sense(model)
         return var_dict
 
     def get_obj_value(self, sol_dict):
-
         variables = self.model.getVars(transformed=True)
         obj_val = sum([v.getObj()*sol_dict[v.name] for v in variables])
         return obj_val
-
-
-    def add_objective(self, model, var_dict):
-
-        obj_sub = Expr()
-        variables = self.model.getVars(transformed=True)
-        zf_sense = self.model.getObjectiveSense()
-        for v in variables:
-            obj_sub += v.getObj() * var_dict[v.name]
-        if obj_sub.degree() != 1:
-            logging.warning("Objective function is empty")
-        obj_sub.normalize()
-        model.setObjective(obj_sub, sense=zf_sense)
 
     def enlargement_possible(self, vlist, clist):
         return all(vlist[i].vtype() != 'CONTINUOUS' for i in range(len(clist))) and all(
             clist[i].is_integer() for i in range(len(clist)))
 
     def is_fixed(self, var):
-        return (var.vtype()=='BINARY' and round(var.getLPSol()) == var.getLPSol())
+        return var.vtype() == 'BINARY' and round(var.getLPSol()) == var.getLPSol()
 
     def compute_fixing_enlargement(self, vlist, clist):
         fixing_enlargement = 0
@@ -133,9 +117,7 @@ class feasiblerounding(Heur):
         return fixing_enlargement
 
     def add_model_constraints(self, model, var_dict):
-
         linear_rows = self.model.getLPRowsData()
-
         for lrow in linear_rows:
             vlist = [col.getVar() for col in lrow.getCols()]
             clist = lrow.getVals()
@@ -147,7 +129,6 @@ class feasiblerounding(Heur):
                            (quicksum( var_dict[vlist[i].name] * clist[i] for i in range(len(vlist))) + const
                             <= rhs))
 
-
     def add_ips_constraints(self, ips_model, var_dict, mode):
         linear_rows = self.model.getLPRowsData()
 
@@ -157,7 +138,7 @@ class feasiblerounding(Heur):
             const = lrow.getConstant()
 
             beta = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype() != 'CONTINUOUS')
-            if mode=='deep_fixing':
+            if mode == 'deep_fixing':
                 fixing_enlargement = self.compute_fixing_enlargement(vlist, clist)
                 beta = beta - fixing_enlargement
             if self.enlargement_possible(vlist, clist):
@@ -198,7 +179,16 @@ class feasiblerounding(Heur):
                 lower = upper = sol_FRA[var.name]
             reduced_var_dict[var.name] = reduced_model.addVar(name=var.name, vtype='CONTINUOUS', lb=lower, ub=upper,
                                                            obj=var.getObj())
+        self.set_objective_sense(reduced_model)
         return  reduced_var_dict
+
+    def set_objective_sense(self, submodel):
+        if self.model.getObjectiveSense() == 'minimize':
+            submodel.setMinimize()
+        elif self.model.getObjectiveSense() == 'maximize':
+            submodel.setMaximize()
+        else:
+            logging.warning('Objective sense is not \'minimize\' or \'maximize\'')
 
     def round_sol(self, sol):
         original_vars = self.model.getVars(transformed=True)
@@ -222,12 +212,10 @@ class feasiblerounding(Heur):
             sol[v.name] = var_value
         return sol
 
-
     def sol_satisfies_constrs(self, sol_dict):
         sol = self.create_sol(sol_dict)
         rounding_feasible = (self.get_lp_violation(sol)>=-FEAS_TOL)
         return rounding_feasible
-
 
     def sol_is_accepted(self, sol_dict):
         original_vars = self.model.getVars(transformed=True)
@@ -247,7 +235,6 @@ class feasiblerounding(Heur):
         return solution_accepted
 
     def fix_and_optimize(self, sol_FRA):
-
         reduced_model = Model('reduced_model')
         reduced_model_vars = self.add_reduced_vars(reduced_model, sol_FRA)
         self.add_model_constraints(reduced_model, reduced_model_vars)
@@ -260,7 +247,6 @@ class feasiblerounding(Heur):
         ips_model = Model("ips")
         ips_vars = self.add_vars_and_bounds(ips_model, mode)
         self.add_ips_constraints(ips_model, ips_vars, mode)
-        self.add_objective(ips_model, ips_vars)
         return ips_model, ips_vars
 
     def get_best_sol(self, sol_dict, val_dict):
@@ -286,7 +272,7 @@ class feasiblerounding(Heur):
 
         for mode in self.options['mode']:
             if not (mode in ['original', 'deep_fixing']):
-                logging.warning('Mode must be original or deep fixing, but is '+ mode)
+                logging.warning('Mode must be original or deep fixing, but is ' + mode)
             ips_model, ips_vars = self.build_ips(mode)
             logging.info(">>>> Optimize over EIPS")
             ips_model.optimize()
@@ -311,7 +297,6 @@ class feasiblerounding(Heur):
         logging.info(val_dict)
         sol_FRA = self.get_best_sol(sol_dict, val_dict)
 
-
         if sol_FRA:
             solution_accepted = self.sol_is_accepted(sol_FRA)
             if solution_accepted:
@@ -322,33 +307,6 @@ class feasiblerounding(Heur):
             return {"result": SCIP_RESULT.DIDNOTFIND}
 
 
-
-def test_granularity_rootnode():
-    path_to_problems = '/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/'
-    os.chdir(path_to_problems)
-    problem_names = glob.glob("*.mps")
-    i = 0
-
-    for problem in problem_names:
-        # create model
-        m = Model()
-        # create and add heuristic to SCIP
-        heuristic = feasiblerounding()
-        m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
-                      freq=0)
-        m.setParam("limits/time", 45)
-        # read exemplary problem from file
-        print('>>>>> Working on Problem: ', problem, ', which is number ', i+1, 'of ', len(problem_names))
-        m.readProblem("".join([path_to_problems, problem]))
-        # optimize problem
-        m.optimize()
-        # free model explicitly
-        del m
-        i = i+1
-        if i > 10:
-            break
-
-
 def test_heur():
     m = Model()
     options = {'mode':['original','deep_fixing']}
@@ -356,12 +314,11 @@ def test_heur():
     m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.DURINGLPLOOP,
                   freq=5)
     # m.readProblem('/home/stefan/Dokumente/02_HiWi_IOR/Paper_BA/franumeric/selectedTestbed/mik.250-1-100.1.mps') # implicit integer variable
-    m.readProblem('n15-3.mps') # ERROR SIGSEGV
+    m.readProblem('Implementierung/50v-10.mps')
+    # m.readProblem('Implementierung/n15-3.mps') # ERROR SIGSEGV
     m.optimize()
     del m
-
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     test_heur()
-    # test_granularity_rootnode()
