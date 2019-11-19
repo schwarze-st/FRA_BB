@@ -11,7 +11,7 @@ for model_name in testbed:
     print('Testing model %s'%model_name)
     path_name = folder_name+'/'+ model_name
     m = test_heur(path_name)
-    m.printStatistics()
+    m.writeStatistics(model_name + "_statistics.stats")
     del m
 
 print(testbed)
