@@ -10,9 +10,8 @@ def read_all_test_instances(folder):
     testset = [file for file in pyfiles]
     return testset
 
-def test_heur(model_path):
+def test_heur(model_path, options = {'mode':'original'}):
     m = Model()
-    options = {'mode':['original','deep_fixing']}
     heuristic = feasiblerounding(options)
     m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
                   freq=5)
@@ -21,5 +20,4 @@ def test_heur(model_path):
     m.setRealParam("limits/time",15)
     m.setLongintParam("limits/nodes",1)
     m.optimize()
-    m.printStatistics()
-    del m
+    return m

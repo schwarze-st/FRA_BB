@@ -10,6 +10,8 @@ problems_with_eq_constrs = []
 for model_name in testbed:
     print('Testing model %s'%model_name)
     path_name = folder_name+'/'+ model_name
-    test_heur(path_name)
+    m = test_heur(path_name)
+    m.printStatistics()
+    del m
 
 print(testbed)

@@ -4,6 +4,7 @@ import os
 import logging
 
 from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_HEURTIMING, quicksum, Expr
+
 FEAS_TOL = 1E-6
 
 
@@ -12,13 +13,12 @@ FEAS_TOL = 1E-6
 #
 
 def get_switching_points(int_sol1, int_sol2):
-    switching_points = [0,1]
-
+    switching_points = [0, 1]
     for j in range(len(int_sol1)):
         eta_j = int_sol2[j] - int_sol1[j]
         lower = math.ceil(int_sol1[j] + min(0, eta_j) - 1 / 2)
         upper = math.floor(int_sol1[j] + max(0, eta_j) - 1 / 2)
-        for l in range(lower, upper+1):
+        for l in range(lower, upper + 1):
             switching_points.append((1 / 2 - int_sol1[j] + l) / eta_j)
     return sorted(set(switching_points))
 
@@ -27,254 +27,9 @@ class feasiblerounding(Heur):
 
     def __init__(self, options={}):
 
-        self.options = {'mode': ['original', 'deep_fixing'], 'delta' : 0.999, 'line_search' : True}
+        self.options = {'mode': ['original', 'deep_fixing'], 'delta': 0.999, 'line_search': True}
         for key in options:
             self.options[key] = options[key]
-
-    def create_sol(self, sol_dict):
-
-        original_vars = self.model.getVars(transformed=True)
-        sol = self.model.createSol()
-        for v in original_vars:
-            self.model.setSolVal(sol, v, sol_dict[v.name])
-        return sol
-
-    def get_line_search_rounding(self, rel_sol_dict, ips_sol_dict):
-
-        original_vars = self.model.getVars(transformed=True)
-        rel_int_sol = self.get_value_list_of_int_vars(rel_sol_dict)
-        ips_int_sol = self.get_value_list_of_int_vars(ips_sol_dict)
-        switching_points = get_switching_points(rel_int_sol, ips_int_sol)
-        logging.info(switching_points)
-        feasible = False
-        i = 0
-        while (not feasible) and (i<len(switching_points)):
-            t = switching_points[i]
-            sol_dict = {}
-            for v in original_vars:
-                sol_dict[v.name] = rel_sol_dict[v.name] + t * (ips_sol_dict[v.name] - rel_sol_dict[v.name])
-            self.round_sol(sol_dict)
-            feasible = self.sol_satisfies_constrs(sol_dict)
-            i = i+1
-
-        if not feasible:
-            logging.warning("No feasible point found while iterating through switching points")
-            logging.warning("len switching points: " + str(len(switching_points)) + "current iteration" +  str(i))
-            sol = self.create_sol(sol_dict)
-            logging.warning("constraint violation is " + str(self.get_lp_violation(sol)))
-
-
-        else:
-            logging.info('Found feasible point for t = ' + str(t))
-
-        return sol_dict
-
-    def contains_contains_equality_constrs(self):
-        linear_rows = self.model.getLPRowsData()
-        for lrow in linear_rows:
-            vlist = [col.getVar() for col in lrow.getCols()]
-            vtype_list = [var.vtype() for var in vlist]
-            if any([var != 'CONTINUOUS' for var in vtype_list]):
-                if lrow.getLhs() == lrow.getRhs():
-                    return True
-        return False
-
-
-    def get_value_list_of_int_vars(self, sol_dict):
-
-        int_values = []
-        original_vars = self.model.getVars(transformed=True)
-        for var in original_vars:
-            if var.vtype() != 'CONTINUOUS':
-                int_values.append(sol_dict[var.name])
-        return int_values
-
-    def add_vars_and_bounds(self, model, mode):
-        original_vars = self.model.getVars(transformed=True)
-        var_dict = dict()
-        for var in original_vars:
-            lower = var.getLbLocal()
-            upper = var.getUbLocal()
-            if var.vtype() != 'CONTINUOUS':
-                if mode == 'deep_fixing' and round(var.getLPSol()) == var.getLPSol() and var.vtype() == 'BINARY':
-                    lower = upper = var.getLPSol()
-                else:
-                    if lower is not None:
-                        lower = math.ceil(lower) - self.options['delta'] + 0.5
-                    if upper is not None:
-                        upper = math.floor(upper) + self.options['delta'] - 0.5
-            var_dict[var.name] = model.addVar(name=var.name, vtype='CONTINUOUS', lb=lower, ub=upper, obj=var.getObj())
-        self.set_objective_sense(model)
-        return var_dict
-
-    def get_obj_value(self, sol_dict):
-        variables = self.model.getVars(transformed=True)
-        obj_val = sum([v.getObj()*sol_dict[v.name] for v in variables])
-        return obj_val
-
-    def enlargement_possible(self, vlist, clist):
-        return all(vlist[i].vtype() != 'CONTINUOUS' for i in range(len(clist))) and all(
-            clist[i].is_integer() for i in range(len(clist)))
-
-    def is_fixed(self, var):
-        return var.vtype() == 'BINARY' and round(var.getLPSol()) == var.getLPSol()
-
-    def compute_fixing_enlargement(self, vlist, clist):
-        fixing_enlargement = 0
-        for i, var in enumerate(vlist):
-            if self.is_fixed(var):
-                fixing_enlargement += abs(clist[i])
-        return fixing_enlargement
-
-    def add_model_constraints(self, model, var_dict):
-        linear_rows = self.model.getLPRowsData()
-        for lrow in linear_rows:
-            vlist = [col.getVar() for col in lrow.getCols()]
-            clist = lrow.getVals()
-            const = lrow.getConstant()
-            lhs = lrow.getLhs()
-            rhs = lrow.getRhs()
-            # add constraint
-            model.addCons( lhs <=
-                           (quicksum( var_dict[vlist[i].name] * clist[i] for i in range(len(vlist))) + const
-                            <= rhs))
-
-    def add_ips_constraints(self, ips_model, var_dict, mode):
-        linear_rows = self.model.getLPRowsData()
-
-        for lrow in linear_rows:
-            vlist = [col.getVar() for col in lrow.getCols()]
-            clist = lrow.getVals()
-            const = lrow.getConstant()
-
-            beta = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype() != 'CONTINUOUS')
-            if mode == 'deep_fixing':
-                fixing_enlargement = self.compute_fixing_enlargement(vlist, clist)
-                beta = beta - fixing_enlargement
-            if self.enlargement_possible(vlist, clist):
-                lhs = math.ceil(lrow.getLhs()) + 0.5 * beta - self.options['delta']
-                rhs = math.floor(lrow.getRhs()) - 0.5 * beta + self.options['delta']
-            else:
-                lhs = lrow.getLhs() + 0.5 * beta
-                rhs = lrow.getRhs() - 0.5 * beta
-            if lhs > (rhs + FEAS_TOL):
-                logging.warning("Inner parallel set is empty")
-                #Todo: Add return DIDNOTFIND
-                break
-
-            ips_model.addCons(
-                lhs <= (quicksum(var_dict[vlist[i].name] * clist[i] for i in range(len(vlist))) + const <= rhs))
-
-    def get_lp_violation(self, sol):
-        local_linear_rows = self.model.getLPRowsData()
-        vio = []
-        if local_linear_rows:
-            for row in local_linear_rows:
-                vio.append(self.model.getRowSolFeas(row, sol))
-            return min(vio)
-        return 0
-
-    def heurinitsol(self):
-        print(">>>> call heurinitsol()")
-
-    def heurexitsol(self):
-        print(">>>> call heurexitsol()")
-
-    def add_reduced_vars(self, reduced_model, sol_FRA):
-        reduced_var_dict = {}
-        original_vars = self.model.getVars(transformed=True)
-        for var in original_vars:
-            lower = var.getLbLocal()
-            upper = var.getUbLocal()
-            if var.vtype() != 'CONTINUOUS':
-                lower = upper = sol_FRA[var.name]
-            reduced_var_dict[var.name] = reduced_model.addVar(name=var.name, vtype='CONTINUOUS', lb=lower, ub=upper,
-                                                           obj=var.getObj())
-        self.set_objective_sense(reduced_model)
-        return  reduced_var_dict
-
-    def set_objective_sense(self, submodel):
-        if self.model.getObjectiveSense() == 'minimize':
-            submodel.setMinimize()
-        elif self.model.getObjectiveSense() == 'maximize':
-            submodel.setMaximize()
-        else:
-            logging.warning('Objective sense is not \'minimize\' or \'maximize\'')
-
-    def round_sol(self, sol):
-        original_vars = self.model.getVars(transformed=True)
-        for v in original_vars:
-            if v.vtype() != 'CONTINUOUS':
-                sol[v.name] = int(round(sol[v.name]))
-    
-    def get_sol_submodel(self, vars, model):
-        sol = {}
-        original_vars = self.model.getVars(transformed=True)
-        for v in original_vars:
-            var_value = model.getVal(vars[v.name])
-            sol[v.name] = var_value
-        return sol
-
-    def get_sol_relaxation(self):
-        sol = {}
-        original_vars = self.model.getVars(transformed=True)
-        for v in original_vars:
-            var_value = self.model.getVal(v)
-            sol[v.name] = var_value
-        return sol
-
-    def sol_satisfies_constrs(self, sol_dict):
-        sol = self.create_sol(sol_dict)
-        rounding_feasible = (self.get_lp_violation(sol)>=-FEAS_TOL)
-        return rounding_feasible
-
-    def sol_is_accepted(self, sol_dict):
-        original_vars = self.model.getVars(transformed=True)
-        sol = self.model.createSol()
-        for v in original_vars:
-            self.model.setSolVal(sol, v, sol_dict[v.name])
-
-        rounding_feasible = self.model.checkSol(sol)
-        solution_accepted = self.model.trySol(sol)
-
-        if rounding_feasible == 0:
-            logging.warning(">>>> ips feasible, but no feasible rounding")
-        logging.info(">>>> accepted solution? %s" % ("yes" if solution_accepted == 1 else "no"))
-
-        logging.debug('Maximum violation of LP row: ' + str(self.get_lp_violation(sol)))
-
-        return solution_accepted
-
-    def set_model_params(self,model):
-        model.setIntParam('display/freq', 0)
-        model.setBoolParam('display/relevantstats', False)
-
-    def fix_and_optimize(self, sol_FRA):
-        reduced_model = Model('reduced_model')
-        reduced_model_vars = self.add_reduced_vars(reduced_model, sol_FRA)
-        self.add_model_constraints(reduced_model, reduced_model_vars)
-        self.set_model_params(reduced_model)
-        reduced_model.optimize()
-        sol_FRA = self.get_sol_submodel(reduced_model_vars, reduced_model)
-        del reduced_model
-        return sol_FRA
-
-    def build_ips(self, mode):
-        ips_model = Model("ips")
-        ips_vars = self.add_vars_and_bounds(ips_model, mode)
-        self.add_ips_constraints(ips_model, ips_vars, mode)
-        return ips_model, ips_vars
-
-    def get_best_sol(self, sol_dict, val_dict):
-        if not sol_dict:
-            return {}
-        if self.model.getObjectiveSense() == 'minimize':
-            best_sol = sol_dict[min(val_dict, key=val_dict.get)]
-        elif self.model.getObjectiveSense() == 'maximize':
-            best_sol = sol_dict[max(val_dict, key=val_dict.get)]
-        else:
-            logging.warning('Unknown objective sense. Expected \'minimize\'or \' maximize \' ')
-        return best_sol
 
     # execution method of the heuristic
     def heurexec(self, heurtiming, nodeinfeasible):
@@ -325,3 +80,247 @@ class feasiblerounding(Heur):
                 return {"result": SCIP_RESULT.DIDNOTFIND}
         else:
             return {"result": SCIP_RESULT.DIDNOTFIND}
+
+    def create_sol(self, sol_dict):
+
+        original_vars = self.model.getVars(transformed=True)
+        sol = self.model.createSol()
+        for v in original_vars:
+            self.model.setSolVal(sol, v, sol_dict[v.name])
+        return sol
+
+    def get_line_search_rounding(self, rel_sol_dict, ips_sol_dict):
+
+        original_vars = self.model.getVars(transformed=True)
+        rel_int_sol = self.get_value_list_of_int_vars(rel_sol_dict)
+        ips_int_sol = self.get_value_list_of_int_vars(ips_sol_dict)
+        switching_points = get_switching_points(rel_int_sol, ips_int_sol)
+        logging.info(switching_points)
+        feasible = False
+        i = 0
+        while (not feasible) and (i < len(switching_points)):
+            t = switching_points[i]
+            sol_dict = {}
+            for v in original_vars:
+                sol_dict[v.name] = rel_sol_dict[v.name] + t * (ips_sol_dict[v.name] - rel_sol_dict[v.name])
+            self.round_sol(sol_dict)
+            feasible = self.sol_satisfies_constrs(sol_dict)
+            i = i + 1
+
+        if not feasible:
+            logging.warning("No feasible point found while iterating through switching points")
+            logging.warning("len switching points: " + str(len(switching_points)) + "current iteration" + str(i))
+            sol = self.create_sol(sol_dict)
+            logging.warning("constraint violation is " + str(self.get_lp_violation(sol)))
+
+
+        else:
+            logging.info('Found feasible point for t = ' + str(t))
+
+        return sol_dict
+
+    def contains_contains_equality_constrs(self):
+        linear_rows = self.model.getLPRowsData()
+        for lrow in linear_rows:
+            vlist = [col.getVar() for col in lrow.getCols()]
+            vtype_list = [var.vtype() for var in vlist]
+            if any([var != 'CONTINUOUS' for var in vtype_list]):
+                if lrow.getLhs() == lrow.getRhs():
+                    return True
+        return False
+
+    def get_value_list_of_int_vars(self, sol_dict):
+
+        int_values = []
+        original_vars = self.model.getVars(transformed=True)
+        for var in original_vars:
+            if var.vtype() != 'CONTINUOUS':
+                int_values.append(sol_dict[var.name])
+        return int_values
+
+    def add_vars_and_bounds(self, model, mode):
+        original_vars = self.model.getVars(transformed=True)
+        var_dict = dict()
+        for var in original_vars:
+            lower = var.getLbLocal()
+            upper = var.getUbLocal()
+            if var.vtype() != 'CONTINUOUS':
+                if mode == 'deep_fixing' and round(var.getLPSol()) == var.getLPSol() and var.vtype() == 'BINARY':
+                    lower = upper = var.getLPSol()
+                else:
+                    if lower is not None:
+                        lower = math.ceil(lower) - self.options['delta'] + 0.5
+                    if upper is not None:
+                        upper = math.floor(upper) + self.options['delta'] - 0.5
+            var_dict[var.name] = model.addVar(name=var.name, vtype='CONTINUOUS', lb=lower, ub=upper, obj=var.getObj())
+        self.set_objective_sense(model)
+        return var_dict
+
+    def get_obj_value(self, sol_dict):
+        variables = self.model.getVars(transformed=True)
+        obj_val = sum([v.getObj() * sol_dict[v.name] for v in variables])
+        return obj_val
+
+    def enlargement_possible(self, vlist, clist):
+        return all(vlist[i].vtype() != 'CONTINUOUS' for i in range(len(clist))) and all(
+            clist[i].is_integer() for i in range(len(clist)))
+
+    def is_fixed(self, var):
+        return var.vtype() == 'BINARY' and round(var.getLPSol()) == var.getLPSol()
+
+    def compute_fixing_enlargement(self, vlist, clist):
+        fixing_enlargement = 0
+        for i, var in enumerate(vlist):
+            if self.is_fixed(var):
+                fixing_enlargement += abs(clist[i])
+        return fixing_enlargement
+
+    def add_model_constraints(self, model, var_dict):
+        linear_rows = self.model.getLPRowsData()
+        for lrow in linear_rows:
+            vlist = [col.getVar() for col in lrow.getCols()]
+            clist = lrow.getVals()
+            const = lrow.getConstant()
+            lhs = lrow.getLhs()
+            rhs = lrow.getRhs()
+            # add constraint
+            model.addCons(lhs <=
+                          (quicksum(var_dict[vlist[i].name] * clist[i] for i in range(len(vlist))) + const
+                           <= rhs))
+
+    def add_ips_constraints(self, ips_model, var_dict, mode):
+        linear_rows = self.model.getLPRowsData()
+
+        for lrow in linear_rows:
+            vlist = [col.getVar() for col in lrow.getCols()]
+            clist = lrow.getVals()
+            const = lrow.getConstant()
+
+            beta = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype() != 'CONTINUOUS')
+            if mode == 'deep_fixing':
+                fixing_enlargement = self.compute_fixing_enlargement(vlist, clist)
+                beta = beta - fixing_enlargement
+            if self.enlargement_possible(vlist, clist):
+                lhs = math.ceil(lrow.getLhs()) + 0.5 * beta - self.options['delta']
+                rhs = math.floor(lrow.getRhs()) - 0.5 * beta + self.options['delta']
+            else:
+                lhs = lrow.getLhs() + 0.5 * beta
+                rhs = lrow.getRhs() - 0.5 * beta
+            if lhs > (rhs + FEAS_TOL):
+                logging.warning("Inner parallel set is empty")
+                # Todo: Add return DIDNOTFIND
+                break
+
+            ips_model.addCons(
+                lhs <= (quicksum(var_dict[vlist[i].name] * clist[i] for i in range(len(vlist))) + const <= rhs))
+
+    def get_lp_violation(self, sol):
+        local_linear_rows = self.model.getLPRowsData()
+        vio = []
+        if local_linear_rows:
+            for row in local_linear_rows:
+                vio.append(self.model.getRowSolFeas(row, sol))
+            return min(vio)
+        return 0
+
+    def heurinitsol(self):
+        print(">>>> call heurinitsol()")
+
+    def heurexitsol(self):
+        print(">>>> call heurexitsol()")
+
+    def add_reduced_vars(self, reduced_model, sol_FRA):
+        reduced_var_dict = {}
+        original_vars = self.model.getVars(transformed=True)
+        for var in original_vars:
+            lower = var.getLbLocal()
+            upper = var.getUbLocal()
+            if var.vtype() != 'CONTINUOUS':
+                lower = upper = sol_FRA[var.name]
+            reduced_var_dict[var.name] = reduced_model.addVar(name=var.name, vtype='CONTINUOUS', lb=lower, ub=upper,
+                                                              obj=var.getObj())
+        self.set_objective_sense(reduced_model)
+        return reduced_var_dict
+
+    def set_objective_sense(self, submodel):
+        if self.model.getObjectiveSense() == 'minimize':
+            submodel.setMinimize()
+        elif self.model.getObjectiveSense() == 'maximize':
+            submodel.setMaximize()
+        else:
+            logging.warning('Objective sense is not \'minimize\' or \'maximize\'')
+
+    def round_sol(self, sol):
+        original_vars = self.model.getVars(transformed=True)
+        for v in original_vars:
+            if v.vtype() != 'CONTINUOUS':
+                sol[v.name] = int(round(sol[v.name]))
+
+    def get_sol_submodel(self, vars, model):
+        sol = {}
+        original_vars = self.model.getVars(transformed=True)
+        for v in original_vars:
+            var_value = model.getVal(vars[v.name])
+            sol[v.name] = var_value
+        return sol
+
+    def get_sol_relaxation(self):
+        sol = {}
+        original_vars = self.model.getVars(transformed=True)
+        for v in original_vars:
+            var_value = self.model.getVal(v)
+            sol[v.name] = var_value
+        return sol
+
+    def sol_satisfies_constrs(self, sol_dict):
+        sol = self.create_sol(sol_dict)
+        rounding_feasible = (self.get_lp_violation(sol) >= -FEAS_TOL)
+        return rounding_feasible
+
+    def sol_is_accepted(self, sol_dict):
+        original_vars = self.model.getVars(transformed=True)
+        sol = self.model.createSol()
+        for v in original_vars:
+            self.model.setSolVal(sol, v, sol_dict[v.name])
+
+        rounding_feasible = self.model.checkSol(sol)
+        solution_accepted = self.model.trySol(sol)
+
+        if rounding_feasible == 0:
+            logging.warning(">>>> ips feasible, but no feasible rounding")
+        logging.info(">>>> accepted solution? %s" % ("yes" if solution_accepted == 1 else "no"))
+
+        logging.debug('Maximum violation of LP row: ' + str(self.get_lp_violation(sol)))
+
+        return solution_accepted
+
+    def set_model_params(self, model):
+        model.setIntParam('display/freq', 0)
+        model.setBoolParam('display/relevantstats', False)
+
+    def fix_and_optimize(self, sol_FRA):
+        reduced_model = Model('reduced_model')
+        reduced_model_vars = self.add_reduced_vars(reduced_model, sol_FRA)
+        self.add_model_constraints(reduced_model, reduced_model_vars)
+        self.set_model_params(reduced_model)
+        reduced_model.optimize()
+        sol_FRA = self.get_sol_submodel(reduced_model_vars, reduced_model)
+        del reduced_model
+        return sol_FRA
+
+    def build_ips(self, mode):
+        ips_model = Model("ips")
+        ips_vars = self.add_vars_and_bounds(ips_model, mode)
+        self.add_ips_constraints(ips_model, ips_vars, mode)
+        return ips_model, ips_vars
+
+    def get_best_sol(self, sol_dict, val_dict):
+        if not sol_dict:
+            return {}
+        if self.model.getObjectiveSense() == 'minimize':
+            best_sol = sol_dict[min(val_dict, key=val_dict.get)]
+        elif self.model.getObjectiveSense() == 'maximize':
+            best_sol = sol_dict[max(val_dict, key=val_dict.get)]
+        else:
+            logging.warning('Unknown objective sense. Expected \'minimize\'or \' maximize \' ')
+        return best_sol
