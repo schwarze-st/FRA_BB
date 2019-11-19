@@ -69,6 +69,17 @@ class feasiblerounding(Heur):
 
         return sol_dict
 
+    def contains_contains_equality_constrs(self):
+        linear_rows = self.model.getLPRowsData()
+        for lrow in linear_rows:
+            vlist = [col.getVar() for col in lrow.getCols()]
+            vtype_list = [var.vtype() for var in vlist]
+            if any([var != 'CONTINUOUS' for var in vtype_list]):
+                if lrow.getLhs() == lrow.getRhs():
+                    return True
+        return False
+
+
     def get_value_list_of_int_vars(self, sol_dict):
 
         int_values = []
@@ -147,7 +158,8 @@ class feasiblerounding(Heur):
                 lhs = lrow.getLhs() + 0.5 * beta
                 rhs = lrow.getRhs() - 0.5 * beta
             if lhs > (rhs + FEAS_TOL):
-                logging.warning("Inner parallel set is empty (equality constrained)")
+                logging.warning("Inner parallel set is empty")
+                #Todo: Add return DIDNOTFIND
                 break
 
             ips_model.addCons(
@@ -273,6 +285,10 @@ class feasiblerounding(Heur):
         val_dict = {}
         if self.options['line_search']:
             rel_sol_dict = self.get_sol_relaxation()
+
+        if self.contains_contains_equality_constrs():
+            logging.info('>>>> Problem contains equality constraints on int vars. Scip heuristic.')
+            return {"result": SCIP_RESULT.DIDNOTRUN}
 
         for mode in self.options['mode']:
             if not (mode in ['original', 'deep_fixing']):

@@ -1,6 +1,7 @@
 import os
 from fra_heur import *
 from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_HEURTIMING, quicksum
+FEAS_TOL = 1E-6
 
 def read_all_test_instances(folder):
     files = os.listdir('./'+folder)
@@ -8,11 +9,6 @@ def read_all_test_instances(folder):
     pyfiles = [file for file in files if file.endswith(suffix)]
     testset = [file for file in pyfiles]
     return testset
-
-def contains_equality_constraints(m):
-
-    return False
-
 
 def test_heur(model_path):
     m = Model()
