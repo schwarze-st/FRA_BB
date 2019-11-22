@@ -1,0 +1,11 @@
+INFO:root:>>>>>>>>>>>>>>>> Running testbed benchmark 22/11/2019 11:40:44<<<<<<<<<<<<<<<<<<<
+INFO:root:testing problem csched007.mps
+INFO:root:>>>> Call feasible rounding heuristic at a node with depth 0
+INFO:root:>>>> Build inner parallel set
+INFO:root:>>>> Problem contains equality constraints on int vars. Scip heuristic.
+INFO:root:testing problem supportcase40.mps
+INFO:root:>>>> Call feasible rounding heuristic at a node with depth 0
+INFO:root:>>>> Build inner parallel set
+INFO:root:>>>> Optimize over EIPS
+INFO:root:{}
+INFO:root:testing problem neos-3402454-bohle.mps

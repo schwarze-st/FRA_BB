@@ -29,6 +29,8 @@ class feasiblerounding(Heur):
 
         self.options = {'mode': ['original', 'deep_fixing'], 'delta': 0.999, 'line_search': True}
         for key in options:
+            if type(options['mode']) is not list:
+                options['mode'] = [options['mode']]
             self.options[key] = options[key]
 
     # execution method of the heuristic
