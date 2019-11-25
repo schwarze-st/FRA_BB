@@ -1,5 +1,6 @@
 .idea/
 benchmark
+eq_constr_problems
 __pycache__
 erste_Schritte
 erste_Schritte.ipynb

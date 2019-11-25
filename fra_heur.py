@@ -16,10 +16,11 @@ def get_switching_points(int_sol1, int_sol2):
     switching_points = [0, 1]
     for j in range(len(int_sol1)):
         eta_j = int_sol2[j] - int_sol1[j]
-        lower = math.ceil(int_sol1[j] + min(0, eta_j) - 1 / 2)
-        upper = math.floor(int_sol1[j] + max(0, eta_j) - 1 / 2)
-        for l in range(lower, upper + 1):
-            switching_points.append((1 / 2 - int_sol1[j] + l) / eta_j)
+        if eta_j != 0:
+            lower = math.ceil(int_sol1[j] + min(0, eta_j) - 1 / 2)
+            upper = math.floor(int_sol1[j] + max(0, eta_j) - 1 / 2)
+            for l in range(lower, upper + 1):
+                switching_points.append((1 / 2 - int_sol1[j] + l) / eta_j)
     return sorted(set(switching_points))
 
 

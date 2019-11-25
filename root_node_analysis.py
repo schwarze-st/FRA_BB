@@ -28,9 +28,10 @@ for model_name in testbed:
             line_of_interest.remove(':')
             results_list.append(line_of_interest)
     del m
+    print(results_list)
     os.remove('statistics')
 
 results_frame = pd.DataFrame(results_list, columns = ['Heuristic','ExecTime','SetupTime','Calls','Found','Best'])
 results_frame.index = testbed
-results_frame.to_pickle(folder_name+'results')
+results_frame.to_pickle('results/'+folder_name+'results')
 print(results_frame)

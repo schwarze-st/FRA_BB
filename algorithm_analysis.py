@@ -17,7 +17,7 @@ def test_heur(model_path, options = {'mode':'original'}):
                   freq=5)
     m.readProblem(model_path)
     m.setIntParam('presolving/maxrestarts',0)
-    m.setRealParam("limits/time",5)
+    m.setRealParam("limits/time",720)
     m.setLongintParam("limits/nodes",1)
     m.optimize()
     return m
