@@ -21,6 +21,7 @@ def get_switching_points(int_sol1, int_sol2):
             upper = math.floor(int_sol1[j] + max(0, eta_j) - 1 / 2)
             for l in range(lower, upper + 1):
                 switching_points.append((1 / 2 - int_sol1[j] + l) / eta_j)
+    logging.info("Computed %i switching points"%len(switching_points))
     return sorted(set(switching_points))
 
 

@@ -860,3 +860,10 @@ INFO:root:>>>> Build inner parallel set
 INFO:root:>>>> Optimize over EIPS
 INFO:root:{}
 INFO:root:testing problem neos-5104907-jarama.mps
+INFO:root:>>>>>>>>>>>>>>>> Running testbed benchmark 11/12/2019 11:11:07<<<<<<<<<<<<<<<<<<<
+INFO:root:testing problem supportcase40.mps
+INFO:root:>>>> Call feasible rounding heuristic at a node with depth 0
+INFO:root:>>>> Build inner parallel set
+INFO:root:>>>> Optimize over EIPS
+INFO:root:{}
+INFO:root:testing problem neos-3402454-bohle.mps
