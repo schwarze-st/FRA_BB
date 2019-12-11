@@ -28,11 +28,10 @@ class feasiblerounding(Heur):
 
     def __init__(self, options={}):
 
-        self.options = {'mode': ['original', 'deep_fixing'], 'delta': 0.999, 'line_search': True}
+        self.options = {'mode': 'original', 'delta': 0.999, 'line_search': True}
         for key in options:
-            if type(options['mode']) is not list:
-                options['mode'] = [options['mode']]
             self.options[key] = options[key]
+        self.ips_proven_empty = False
 
     # execution method of the heuristic
     def heurexec(self, heurtiming, nodeinfeasible):
@@ -48,31 +47,37 @@ class feasiblerounding(Heur):
             logging.info('>>>> Problem contains equality constraints on int vars. Scip heuristic.')
             return {"result": SCIP_RESULT.DIDNOTRUN}
 
-        for mode in self.options['mode']:
-            if not (mode in ['original', 'deep_fixing']):
-                logging.warning('Mode must be original or deep fixing, but is ' + mode)
-            ips_model, ips_vars = self.build_ips(mode)
-            logging.info(">>>> Optimize over EIPS")
-            self.set_model_params(ips_model)
-            ips_model.optimize()
+        mode = self.options['mode']
+        if not (mode in ['original', 'deep_fixing']):
+            logging.warning('Mode must be original or deep fixing, but is ' + mode)
 
-            if ips_model.getStatus() == 'optimal':
+        ips_model, ips_vars = self.build_ips(mode)
+        if self.ips_proven_empty:
+            logging.info('>>>> Lefthand side larger than right hand side for some constraint. Skip heuristic.')
+            return {"result": SCIP_RESULT.DIDNOTRUN}
 
-                sol_FRA_current_mode = self.get_sol_submodel(ips_vars, ips_model)
+        logging.info(">>>> Optimize over EIPS")
+        self.set_model_params(ips_model)
+        ips_model.optimize()
 
-                if self.options['line_search']:
-                    line_sarch_sol = self.get_line_search_rounding(rel_sol_dict, sol_FRA_current_mode)
-                    label_sol = mode + '_line_search'
-                    sol_dict[label_sol] = self.fix_and_optimize(line_sarch_sol)
-                    val_dict[label_sol] = self.get_obj_value(sol_dict[label_sol])
+        if ips_model.getStatus() == 'optimal':
 
-                label_sol = mode
-                self.round_sol(sol_FRA_current_mode)
-                sol_dict[label_sol] = self.fix_and_optimize(sol_FRA_current_mode)
-                val_dict[label_sol] = self.get_obj_value(sol_dict[mode])
-                logging.info(val_dict)
-            del ips_model
-            del ips_vars
+            sol_FRA_current_mode = self.get_sol_submodel(ips_vars, ips_model)
+
+            if self.options['line_search']:
+                line_search_sol = self.get_line_search_rounding(rel_sol_dict, sol_FRA_current_mode)
+                label_sol = mode + '_line_search'
+                sol_dict[label_sol] = self.fix_and_optimize(line_search_sol)
+                val_dict[label_sol] = self.get_obj_value(sol_dict[label_sol])
+
+            label_sol = mode
+            self.round_sol(sol_FRA_current_mode)
+            sol_dict[label_sol] = self.fix_and_optimize(sol_FRA_current_mode)
+            val_dict[label_sol] = self.get_obj_value(sol_dict[mode])
+            logging.info(val_dict)
+        del ips_model
+        del ips_vars
+
         logging.info(val_dict)
         sol_FRA = self.get_best_sol(sol_dict, val_dict)
         if sol_FRA:
@@ -192,8 +197,8 @@ class feasiblerounding(Heur):
                            <= rhs))
 
     def add_ips_constraints(self, ips_model, var_dict, mode):
-        linear_rows = self.model.getLPRowsData()
 
+        linear_rows = self.model.getLPRowsData()
         for lrow in linear_rows:
             vlist = [col.getVar() for col in lrow.getCols()]
             clist = lrow.getVals()
@@ -211,9 +216,8 @@ class feasiblerounding(Heur):
                 rhs = lrow.getRhs() - 0.5 * beta
             if lhs > (rhs + FEAS_TOL):
                 logging.warning("Inner parallel set is empty")
-                # Todo: Add return DIDNOTFIND
+                self.ips_proven_empty = True
                 break
-
             ips_model.addCons(
                 lhs <= (quicksum(var_dict[vlist[i].name] * clist[i] for i in range(len(vlist))) + const <= rhs))
 
