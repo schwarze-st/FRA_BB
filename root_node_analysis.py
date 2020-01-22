@@ -5,8 +5,8 @@ import pandas as pd
 from datetime import *
 import os
 
-logging.basicConfig(level=logging.INFO, filename='results/root_node_analysis_log')
-folder_name = 'benchmark'
+folder_name = 'collection'
+logging.basicConfig(level=logging.INFO, filename='results/root_node_analysis_log_'+folder_name)
 now = datetime.now()
 dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
 logging.info('>>>>>>>>>>>>>>>> Running testbed ' + folder_name + " "+ dt_string + "<<<<<<<<<<<<<<<<<<<")
