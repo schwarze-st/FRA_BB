@@ -45,7 +45,7 @@ class feasiblerounding(Heur):
             rel_sol_dict = self.get_sol_relaxation()
 
         if self.contains_contains_equality_constrs():
-            logging.info('>>>> Problem contains equality constraints on int vars. Scip heuristic.')
+            logging.info('>>>> Problem contains equality constraints on int vars. Skip heuristic.')
             return {"result": SCIP_RESULT.DIDNOTRUN}
 
         mode = self.options['mode']
@@ -60,6 +60,7 @@ class feasiblerounding(Heur):
         logging.info(">>>> Optimize over EIPS")
         self.set_model_params(ips_model)
         ips_model.optimize()
+        logging.info("Model status is:"+str(ips_model.getStatus()) )
 
         if ips_model.getStatus() == 'optimal':
 
