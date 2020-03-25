@@ -28,14 +28,30 @@ def get_switching_points(int_sol1, int_sol2):
 class feasiblerounding(Heur):
 
     def __init__(self, options={}):
+        """
+        Construct the feasible rounding heuristic.
 
+        :param options: dictionary containing:
+            'mode':'original' or 'deep_fixing')
+            'delta':(enlargement parameter)
+            'linesearch':(boolean)
+        :return: returns nothing
+        """
+
+        #TODO: pass variables instead of dict?
         self.options = {'mode': 'original', 'delta': 0.999, 'line_search': True}
         for key in options:
             self.options[key] = options[key]
         self.ips_proven_empty = False
 
-    # execution method of the heuristic
     def heurexec(self, heurtiming, nodeinfeasible):
+        """
+        executes the heuristic.
+
+        :param heurtiming
+        :param nodeinfeasible
+        :return: returns SCIP_RESULT to solver
+        """
 
         logging.info(">>>> Call feasible rounding heuristic at a node with depth %d" % (self.model.getDepth()))
         logging.info(">>>> Build inner parallel set")
@@ -45,7 +61,7 @@ class feasiblerounding(Heur):
             rel_sol_dict = self.get_sol_relaxation()
 
         if self.contains_contains_equality_constrs():
-            logging.info('>>>> Problem contains equality constraints on int vars. Skip heuristic.')
+            logging.info('>>>> Problem contains equality constraints on int vars, skip heuristic.')
             return {"result": SCIP_RESULT.DIDNOTRUN}
 
         mode = self.options['mode']
