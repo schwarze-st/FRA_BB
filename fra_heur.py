@@ -50,7 +50,7 @@ class feasiblerounding(Heur):
 
         self.ips_proven_empty = False
         self.statistics = {'instance':'empty', 'eq_constrs':False, 'ips_nonempty':False, 'feasible':False,
-                           'accepted':False}
+                           'accepted':False, 'time_heur':None, 'time_pp':None, 'time_scip':None, 'time_solveips':None}
 
     def heurexec(self, heurtiming, nodeinfeasible):
         """
@@ -76,6 +76,7 @@ class feasiblerounding(Heur):
         if self.contains_contains_equality_constrs():
             self.statistics['eq_constrs'] = True
             self.statistics['time_heur'] = time() - timer_start
+            self.statistics['time_scip'] = self.model.getTotalTime()
             logging.info('>>>> Problem contains equality constraints on int vars, skip heuristic.')
             return {"result": SCIP_RESULT.DIDNOTRUN}
 
