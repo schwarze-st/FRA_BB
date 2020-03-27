@@ -6,6 +6,7 @@ import pickle
 import pandas as pd
 
 from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_HEURTIMING, quicksum, Expr
+from time import time
 
 FEAS_TOL = 1E-6
 
@@ -64,6 +65,7 @@ class feasiblerounding(Heur):
         depth = self.model.getDepth()
         self.statistics['instance'] = name
         self.statistics['depth'] = depth
+        timer_start = time()
 
         logging.info(">>>> Build inner parallel set")
         sol_dict = {}
@@ -73,6 +75,7 @@ class feasiblerounding(Heur):
 
         if self.contains_contains_equality_constrs():
             self.statistics['eq_constrs'] = True
+            self.statistics['time_heur'] = time() - timer_start
             logging.info('>>>> Problem contains equality constraints on int vars, skip heuristic.')
             return {"result": SCIP_RESULT.DIDNOTRUN}
 
@@ -84,14 +87,18 @@ class feasiblerounding(Heur):
         ips_model, ips_vars = self.build_ips(mode)
         if self.ips_proven_empty:
             logging.info('>>>> Lefthand side larger than right hand side for some constraint, skip heuristic.')
+            self.statistics['time_heur'] = time() - timer_start
+            self.statistics['time_scip'] = self.model.getTotalTime()
             return {"result": SCIP_RESULT.DIDNOTRUN}
 
         logging.info(">>>> Optimize over EIPS")
         self.set_model_params(ips_model)
         print(">>>> Optimize starting")
         ips_model.hideOutput(True)
+        timer_ips = time()
         ips_model.optimize()
         print(">>>> Optimize done")
+        self.statistics['time_solveips'] = time() - timer_ips
         logging.info("Model status is:"+str(ips_model.getStatus()) )
 
         if ips_model.getStatus() == 'optimal':
@@ -99,6 +106,7 @@ class feasiblerounding(Heur):
             self.statistics['ips_nonempty'] = True
             sol_FRA_current_mode = self.get_sol_submodel(ips_vars, ips_model)
 
+            timer_pp = time()
             if self.line_search:
                 line_search_sol = self.get_line_search_rounding(rel_sol_dict, sol_FRA_current_mode)
                 label_sol = mode + '_ls'
@@ -109,6 +117,7 @@ class feasiblerounding(Heur):
             self.round_sol(sol_FRA_current_mode)
             sol_dict[label_sol] = self.fix_and_optimize(sol_FRA_current_mode)
             val_dict[label_sol] = self.get_obj_value(sol_dict[mode])
+            self.statistics['time_pp'] = time()-timer_pp
             logging.info(val_dict)
 
         del ips_model
@@ -126,10 +135,16 @@ class feasiblerounding(Heur):
 
             if solution_accepted:
                 self.statistics['accepted'] = True
+                self.statistics['time_heur'] = time() - timer_start
+                self.statistics['time_scip'] = self.model.getTotalTime()
                 return {"result": SCIP_RESULT.FOUNDSOL}
             else:
+                self.statistics['time_heur'] = time() - timer_start
+                self.statistics['time_scip'] = self.model.getTotalTime()
                 return {"result": SCIP_RESULT.DIDNOTFIND}
         else:
+            self.statistics['time_heur'] = time() - timer_start
+            self.statistics['time_scip'] = self.model.getTotalTime()
             return {"result": SCIP_RESULT.DIDNOTFIND}
 
     def create_sol(self, sol_dict):
@@ -356,6 +371,7 @@ class feasiblerounding(Heur):
         reduced_model_vars = self.add_reduced_vars(reduced_model, sol_FRA)
         self.add_model_constraints(reduced_model, reduced_model_vars)
         self.set_model_params(reduced_model)
+        reduced_model.hideOutput(True)
         reduced_model.optimize()
         sol_FRA = self.get_sol_submodel(reduced_model_vars, reduced_model)
         del reduced_model
