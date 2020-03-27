@@ -60,7 +60,10 @@ class feasiblerounding(Heur):
         :return: returns SCIP_RESULT to solver
         """
 
-        logging.info(">>>> Call feasible rounding heuristic at a node with depth %d" % (self.model.getDepth()))
+        name = self.model.getProbName()
+        depth = self.model.getDepth()
+        print('>>>> we are in problem:',name)
+        logging.info(">>>> Call feasible rounding heuristic at a node with depth %d" % (depth))
         logging.info(">>>> Build inner parallel set")
         sol_dict = {}
         val_dict = {}
@@ -113,6 +116,9 @@ class feasiblerounding(Heur):
         logging.info(val_dict)
         sol_FRA = self.get_best_sol(sol_dict, val_dict)
         if sol_FRA:
+            sol_model = self.model.getBestSol()
+            print('>>>> Objective value of best known primal solution: ', self.model.getSolObjVal(sol_model, original=False))
+            print('>>>> Objective value of best FRA feasible point:    ', self.get_obj_value(sol_FRA))
             solution_accepted = self.sol_is_accepted(sol_FRA)
             self.statistics['obj_FRA'] = val_dict
             if solution_accepted:
