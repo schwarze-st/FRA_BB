@@ -4,7 +4,6 @@ import os
 import logging
 
 from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_HEURTIMING, quicksum, Expr
-from time import time
 
 FEAS_TOL = 1E-6
 
@@ -59,8 +58,6 @@ class feasiblerounding(Heur):
 
         logging.info(">>>> Call feasible rounding heuristic at a node with depth %d" % (self.model.getDepth()))
         logging.info(">>>> Build inner parallel set")
-        timer_start = time()
-
         sol_dict = {}
         val_dict = {}
         if self.line_search:
@@ -68,8 +65,6 @@ class feasiblerounding(Heur):
 
         if self.contains_contains_equality_constrs():
             logging.info('>>>> Problem contains equality constraints on int vars, skip heuristic.')
-            runtime = time() - timer_start
-            print('>>>> Laufzeit der Heuristik: ', runtime)
             return {"result": SCIP_RESULT.DIDNOTRUN}
 
         mode = self.mode
@@ -79,8 +74,6 @@ class feasiblerounding(Heur):
         ips_model, ips_vars = self.build_ips(mode)
         if self.ips_proven_empty:
             logging.info('>>>> Lefthand side larger than right hand side for some constraint. Skip heuristic.')
-            runtime = time() - timer_start
-            print('>>>> Laufzeit der Heuristik: ', runtime)
             return {"result": SCIP_RESULT.DIDNOTRUN}
 
         logging.info(">>>> Optimize over EIPS")
@@ -111,22 +104,13 @@ class feasiblerounding(Heur):
 
         logging.info(val_dict)
         sol_FRA = self.get_best_sol(sol_dict, val_dict)
-        sol_model = self.model.getBestSol()
         if sol_FRA:
-            print('>>>> Objective value of best known primal solution: ', self.model.getSolObjVal(sol_model, original=False))
-            print('>>>> Objective value of best FRA feasible point:    ', self.get_obj_value(sol_FRA))
             solution_accepted = self.sol_is_accepted(sol_FRA)
             if solution_accepted:
-                runtime = time() - timer_start
-                print('>>>> Laufzeit der Heuristik: ', runtime)
                 return {"result": SCIP_RESULT.FOUNDSOL}
             else:
-                runtime = time() - timer_start
-                print('>>>> Laufzeit der Heuristik: ', runtime)
                 return {"result": SCIP_RESULT.DIDNOTFIND}
         else:
-            runtime = time() - timer_start
-            print('>>>> Laufzeit der Heuristik: ', runtime)
             return {"result": SCIP_RESULT.DIDNOTFIND}
 
     def create_sol(self, sol_dict):
@@ -351,7 +335,6 @@ class feasiblerounding(Heur):
         reduced_model_vars = self.add_reduced_vars(reduced_model, sol_FRA)
         self.add_model_constraints(reduced_model, reduced_model_vars)
         self.set_model_params(reduced_model)
-        reduced_model.hideOutput(True)
         reduced_model.optimize()
         sol_FRA = self.get_sol_submodel(reduced_model_vars, reduced_model)
         del reduced_model
