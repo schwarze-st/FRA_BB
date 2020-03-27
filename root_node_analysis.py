@@ -20,7 +20,7 @@ for idx, model_name in enumerate(testbed):
     print('Testing model %s'%model_name)
     path_name = folder_name+'/'+ model_name
     try:
-        m = test_heur(path_name)
+        m = test_heur(path_name, model_name)
         m.writeStatistics("statistics")
         with open('statistics') as f:
             content = f.readlines()

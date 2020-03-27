@@ -56,7 +56,10 @@ class feasiblerounding(Heur):
         :return: returns SCIP_RESULT to solver
         """
 
-        logging.info(">>>> Call feasible rounding heuristic at a node with depth %d" % (self.model.getDepth()))
+        name = self.model.getProbName()
+        depth = self.model.getDepth()
+        print('>>>> we are in problem:',name)
+        logging.info(">>>> Call feasible rounding heuristic at a node with depth %d" % (depth))
         logging.info(">>>> Build inner parallel set")
         sol_dict = {}
         val_dict = {}

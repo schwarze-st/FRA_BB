@@ -10,8 +10,8 @@ def read_all_test_instances(folder):
     testset = [file for file in pyfiles]
     return testset
 
-def test_heur(model_path):
-    m = Model()
+def test_heur(model_path, model_name):
+    m = Model(problemName=model_name)
     heuristic = feasiblerounding()
     m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
                   freq=5)
