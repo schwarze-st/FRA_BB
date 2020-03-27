@@ -27,21 +27,19 @@ def get_switching_points(int_sol1, int_sol2):
 
 class feasiblerounding(Heur):
 
-    def __init__(self, options={}):
+    def __init__(self, mode='original', delta=0.999, line_search=True):
         """
         Construct the feasible rounding heuristic.
 
-        :param options: dictionary containing:
-            'mode':'original' or 'deep_fixing')
-            'delta':(enlargement parameter)
-            'linesearch':(boolean)
+        :param mode: 'original' or 'deep_fixing'
+        :param delta: enlargement (0,1)
+        :param line_search: flag for postprocessing
         :return: returns nothing
         """
 
-        #TODO: pass variables instead of dict?
-        self.options = {'mode': 'original', 'delta': 0.999, 'line_search': True}
-        for key in options:
-            self.options[key] = options[key]
+        self.mode = mode
+        self.delta = delta
+        self.line_search = line_search
         self.ips_proven_empty = False
 
     def heurexec(self, heurtiming, nodeinfeasible):
@@ -57,14 +55,14 @@ class feasiblerounding(Heur):
         logging.info(">>>> Build inner parallel set")
         sol_dict = {}
         val_dict = {}
-        if self.options['line_search']:
+        if self.line_search:
             rel_sol_dict = self.get_sol_relaxation()
 
         if self.contains_contains_equality_constrs():
             logging.info('>>>> Problem contains equality constraints on int vars, skip heuristic.')
             return {"result": SCIP_RESULT.DIDNOTRUN}
 
-        mode = self.options['mode']
+        mode = self.mode
         if not (mode in ['original', 'deep_fixing']):
             logging.warning('Mode must be original or deep fixing, but is ' + mode)
 
@@ -82,7 +80,7 @@ class feasiblerounding(Heur):
 
             sol_FRA_current_mode = self.get_sol_submodel(ips_vars, ips_model)
 
-            if self.options['line_search']:
+            if self.line_search:
                 line_search_sol = self.get_line_search_rounding(rel_sol_dict, sol_FRA_current_mode)
                 label_sol = mode + '_line_search'
                 sol_dict[label_sol] = self.fix_and_optimize(line_search_sol)
@@ -175,9 +173,9 @@ class feasiblerounding(Heur):
                     lower = upper = var.getLPSol()
                 else:
                     if lower is not None:
-                        lower = math.ceil(lower) - self.options['delta'] + 0.5
+                        lower = math.ceil(lower) - self.delta + 0.5
                     if upper is not None:
-                        upper = math.floor(upper) + self.options['delta'] - 0.5
+                        upper = math.floor(upper) + self.delta - 0.5
             var_dict[var.name] = model.addVar(name=var.name, vtype='CONTINUOUS', lb=lower, ub=upper, obj=var.getObj())
         self.set_objective_sense(model)
         return var_dict
@@ -227,8 +225,8 @@ class feasiblerounding(Heur):
                 fixing_enlargement = self.compute_fixing_enlargement(vlist, clist)
                 beta = beta - fixing_enlargement
             if self.enlargement_possible(vlist, clist):
-                lhs = math.ceil(lrow.getLhs()) + 0.5 * beta - self.options['delta']
-                rhs = math.floor(lrow.getRhs()) - 0.5 * beta + self.options['delta']
+                lhs = math.ceil(lrow.getLhs()) + 0.5 * beta - self.delta
+                rhs = math.floor(lrow.getRhs()) - 0.5 * beta + self.delta
             else:
                 lhs = lrow.getLhs() + 0.5 * beta
                 rhs = lrow.getRhs() - 0.5 * beta
