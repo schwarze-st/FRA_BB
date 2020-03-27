@@ -105,6 +105,9 @@ class feasiblerounding(Heur):
         logging.info(val_dict)
         sol_FRA = self.get_best_sol(sol_dict, val_dict)
         if sol_FRA:
+            sol_model = self.model.getBestSol()
+            print('>>>> Objective value of best known primal solution: ', self.model.getSolObjVal(sol_model, original=False))
+            print('>>>> Objective value of best FRA feasible point:    ', self.get_obj_value(sol_FRA))
             solution_accepted = self.sol_is_accepted(sol_FRA)
             if solution_accepted:
                 return {"result": SCIP_RESULT.FOUNDSOL}
