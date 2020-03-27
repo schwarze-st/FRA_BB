@@ -7,7 +7,6 @@ import os
 
 
 folder_name = 'benchmark2'
-os.remove('temp_results.pickle')
 logging.basicConfig(level=logging.INFO, filename='results/root_node_analysis_log_'+folder_name)
 now = datetime.now()
 dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
@@ -41,4 +40,6 @@ for idx, model_name in enumerate(testbed):
     results_frame.to_pickle('results/'+folder_name+'results')
     print(results_frame)
 
+os.rename('temp_results.pickle','results/FRA_Scip.pickle')
+convert_dict_to_dataframe()
 

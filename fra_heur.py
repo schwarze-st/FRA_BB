@@ -48,8 +48,8 @@ class feasiblerounding(Heur):
             setattr(self, key, self.options[key])
 
         self.ips_proven_empty = False
-        self.statistics = {'feasible_point':False, 'contains_eq_constrs':False, 'ips_nonempty':False,
-                           'solution_accepted':False}
+        self.statistics = {'instance':'empty', 'eq_constrs':False, 'ips_nonempty':False, 'feasible':False,
+                           'accepted':False}
 
     def heurexec(self, heurtiming, nodeinfeasible):
         """
@@ -62,8 +62,9 @@ class feasiblerounding(Heur):
 
         name = self.model.getProbName()
         depth = self.model.getDepth()
-        print('>>>> we are in problem:',name)
-        logging.info(">>>> Call feasible rounding heuristic at a node with depth %d" % (depth))
+        self.statistics['instance'] = name
+        self.statistics['depth'] = depth
+
         logging.info(">>>> Build inner parallel set")
         sol_dict = {}
         val_dict = {}
@@ -71,7 +72,7 @@ class feasiblerounding(Heur):
             rel_sol_dict = self.get_sol_relaxation()
 
         if self.contains_contains_equality_constrs():
-            self.statistics['contains_eq_constrs'] = True
+            self.statistics['eq_constrs'] = True
             logging.info('>>>> Problem contains equality constraints on int vars, skip heuristic.')
             return {"result": SCIP_RESULT.DIDNOTRUN}
 
@@ -82,7 +83,7 @@ class feasiblerounding(Heur):
 
         ips_model, ips_vars = self.build_ips(mode)
         if self.ips_proven_empty:
-            logging.info('>>>> Lefthand side larger than right hand side for some constraint. Skip heuristic.')
+            logging.info('>>>> Lefthand side larger than right hand side for some constraint, skip heuristic.')
             return {"result": SCIP_RESULT.DIDNOTRUN}
 
         logging.info(">>>> Optimize over EIPS")
@@ -100,7 +101,7 @@ class feasiblerounding(Heur):
 
             if self.line_search:
                 line_search_sol = self.get_line_search_rounding(rel_sol_dict, sol_FRA_current_mode)
-                label_sol = mode + '_line_search'
+                label_sol = mode + '_ls'
                 sol_dict[label_sol] = self.fix_and_optimize(line_search_sol)
                 val_dict[label_sol] = self.get_obj_value(sol_dict[label_sol])
 
@@ -115,14 +116,16 @@ class feasiblerounding(Heur):
 
         logging.info(val_dict)
         sol_FRA = self.get_best_sol(sol_dict, val_dict)
+
         if sol_FRA:
             sol_model = self.model.getBestSol()
-            print('>>>> Objective value of best known primal solution: ', self.model.getSolObjVal(sol_model, original=False))
-            print('>>>> Objective value of best FRA feasible point:    ', self.get_obj_value(sol_FRA))
             solution_accepted = self.sol_is_accepted(sol_FRA)
-            self.statistics['obj_FRA'] = val_dict
+            self.statistics['obj_FRA'] = val_dict[min(val_dict, key=val_dict.get)]
+            self.statistics['impr_PP'] = val_dict[mode]-val_dict[mode+'_ls']
+            self.statistics['obj_SCIP'] = self.model.getSolObjVal(sol_model, original=False)
+
             if solution_accepted:
-                self.statistics['solution_accepted'] = True
+                self.statistics['accepted'] = True
                 return {"result": SCIP_RESULT.FOUNDSOL}
             else:
                 return {"result": SCIP_RESULT.DIDNOTFIND}
@@ -332,12 +335,11 @@ class feasiblerounding(Heur):
 
         rounding_feasible = self.model.checkSol(sol)
         solution_accepted = self.model.trySol(sol)
-        #Todo: Check if 0/1 or False/True
 
         if rounding_feasible == 0:
             logging.warning(">>>> ips feasible, but no feasible rounding")
         else:
-            self.statistics['feasible_point'] = True
+            self.statistics['feasible'] = True
 
         logging.info(">>>> accepted solution? %s" % ("yes" if solution_accepted == 1 else "no"))
 

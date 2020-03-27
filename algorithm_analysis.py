@@ -22,3 +22,15 @@ def test_heur(model_path, model_name):
     m.optimize()
     return m
 
+def convert_dict_to_dataframe():
+    data = []
+    with open('results/FRA_Scip.pickle', 'rb') as handle:
+        try:
+            while True:
+                data.append(pickle.load(handle))
+        except EOFError:
+            pass
+    results_frame = pd.DataFrame(data)
+    results_frame.set_index('instance', inplace=True)
+    results_frame.to_pickle('results/FRA_Scip_dataframe')
+    print(results_frame.to_string())
