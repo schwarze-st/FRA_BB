@@ -2,8 +2,6 @@
 benchmark
 eq_constr_problems
 __pycache__
-erste_Schritte
-erste_Schritte.ipynb
 saved_outputs
 roundingheur.py
 selectedTestbed
@@ -11,3 +9,5 @@ testbed2
 benchmark2
 results
 .ipynb_checkpoints/
+ipynb_checkpoints/
+collection
