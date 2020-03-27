@@ -2,6 +2,8 @@ import glob
 import math
 import os
 import logging
+import pickle
+import pandas as pd
 
 from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_HEURTIMING, quicksum, Expr
 
@@ -46,6 +48,8 @@ class feasiblerounding(Heur):
             setattr(self, key, self.options[key])
 
         self.ips_proven_empty = False
+        self.statistics = {'feasible_point':False, 'contains_eq_constrs':False, 'ips_nonempty':False,
+                           'solution_accepted':False}
 
     def heurexec(self, heurtiming, nodeinfeasible):
         """
@@ -64,8 +68,10 @@ class feasiblerounding(Heur):
             rel_sol_dict = self.get_sol_relaxation()
 
         if self.contains_contains_equality_constrs():
+            self.statistics['contains_eq_constrs'] = True
             logging.info('>>>> Problem contains equality constraints on int vars, skip heuristic.')
             return {"result": SCIP_RESULT.DIDNOTRUN}
+
 
         mode = self.mode
         if not (mode in ['original', 'deep_fixing']):
@@ -86,6 +92,7 @@ class feasiblerounding(Heur):
 
         if ips_model.getStatus() == 'optimal':
 
+            self.statistics['ips_nonempty'] = True
             sol_FRA_current_mode = self.get_sol_submodel(ips_vars, ips_model)
 
             if self.line_search:
@@ -99,6 +106,7 @@ class feasiblerounding(Heur):
             sol_dict[label_sol] = self.fix_and_optimize(sol_FRA_current_mode)
             val_dict[label_sol] = self.get_obj_value(sol_dict[mode])
             logging.info(val_dict)
+
         del ips_model
         del ips_vars
 
@@ -106,7 +114,9 @@ class feasiblerounding(Heur):
         sol_FRA = self.get_best_sol(sol_dict, val_dict)
         if sol_FRA:
             solution_accepted = self.sol_is_accepted(sol_FRA)
+            self.statistics['obj_FRA'] = val_dict
             if solution_accepted:
+                self.statistics['solution_accepted'] = True
                 return {"result": SCIP_RESULT.FOUNDSOL}
             else:
                 return {"result": SCIP_RESULT.DIDNOTFIND}
@@ -144,7 +154,6 @@ class feasiblerounding(Heur):
             logging.warning("len switching points: " + str(len(switching_points)) + "current iteration" + str(i))
             sol = self.create_sol(sol_dict)
             logging.warning("constraint violation is " + str(self.get_lp_violation(sol)))
-
 
         else:
             logging.info('Found feasible point for t = ' + str(t))
@@ -258,7 +267,8 @@ class feasiblerounding(Heur):
         print(">>>> call heurinitsol()")
 
     def heurexitsol(self):
-        print(">>>> call heurexitsol()")
+        with open('temp_results.pickle', 'ab') as handle:
+            pickle.dump(self.statistics, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def add_reduced_vars(self, reduced_model, sol_FRA):
         reduced_var_dict = {}
@@ -320,6 +330,9 @@ class feasiblerounding(Heur):
 
         if rounding_feasible == 0:
             logging.warning(">>>> ips feasible, but no feasible rounding")
+        else:
+            self.statistics['feasible_point'] = True
+
         logging.info(">>>> accepted solution? %s" % ("yes" if solution_accepted == 1 else "no"))
 
         logging.debug('Maximum violation of LP row: ' + str(self.get_lp_violation(sol)))
