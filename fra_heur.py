@@ -27,19 +27,24 @@ def get_switching_points(int_sol1, int_sol2):
 
 class feasiblerounding(Heur):
 
-    def __init__(self, mode='original', delta=0.999, line_search=True):
+    def __init__(self, options={}):
         """
         Construct the feasible rounding heuristic.
-
+        Encoded in options (i.e. options['mode'] etc.):
         :param mode: 'original' or 'deep_fixing'
         :param delta: enlargement (0,1)
         :param line_search: flag for postprocessing
         :return: returns nothing
         """
 
-        self.mode = mode
-        self.delta = delta
-        self.line_search = line_search
+        self.options = {'mode': 'original', 'delta': 0.999, 'line_search': True}
+        for key in options:
+            self.options[key] = options[key]
+
+        #Set class variables with names as keys and their corresponding values from the dictionary
+        for key in self.options:
+            setattr(self, key, self.options[key])
+
         self.ips_proven_empty = False
 
     def heurexec(self, heurtiming, nodeinfeasible):
