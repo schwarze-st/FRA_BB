@@ -6,7 +6,7 @@ from datetime import *
 import os
 
 logging.basicConfig(level=logging.INFO, filename='results/root_node_analysis_log')
-folder_name = 'benchmark'
+folder_name = 'benchmark2'
 now = datetime.now()
 dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
 logging.info('>>>>>>>>>>>>>>>> Running testbed ' + folder_name + " "+ dt_string + "<<<<<<<<<<<<<<<<<<<")

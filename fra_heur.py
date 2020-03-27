@@ -59,7 +59,10 @@ class feasiblerounding(Heur):
 
         logging.info(">>>> Optimize over EIPS")
         self.set_model_params(ips_model)
+        print(">>>> Optimize starting")
+        ips_model.hideOutput(True)
         ips_model.optimize()
+        print(">>>> Optimize done")
 
         if ips_model.getStatus() == 'optimal':
 
@@ -293,6 +296,7 @@ class feasiblerounding(Heur):
 
         rounding_feasible = self.model.checkSol(sol)
         solution_accepted = self.model.trySol(sol)
+        #Todo: Check if 0/1 or False/True
 
         if rounding_feasible == 0:
             logging.warning(">>>> ips feasible, but no feasible rounding")
