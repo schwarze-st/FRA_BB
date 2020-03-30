@@ -86,8 +86,6 @@ class feasiblerounding(Heur):
         ips_model, ips_vars = self.build_ips(mode)
         if self.ips_proven_empty:
             logging.info('>>>> Lefthand side larger than right hand side for some constraint, skip heuristic.')
-            self.statistics['time_heur'] = time() - self.timer_start
-            self.statistics['time_scip'] = self.model.getTotalTime()
             return {"result": SCIP_RESULT.DIDNOTRUN}
 
         logging.info(">>>> Optimize over EIPS")
