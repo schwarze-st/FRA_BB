@@ -50,7 +50,7 @@ class feasiblerounding(Heur):
 
         self.ips_proven_empty = False
         self.statistics = {'instance':'empty', 'eq_constrs':False, 'ips_nonempty':False, 'feasible':False,
-                           'accepted':False, 'time_heur':None, 'time_pp':None, 'time_scip':None, 'time_solveips':None}
+                           'accepted':False, 'time_heur':None,  'time_solveips':None, 'time_pp':None, 'time_scip':None}
 
     def heurexec(self, heurtiming, nodeinfeasible):
         """
