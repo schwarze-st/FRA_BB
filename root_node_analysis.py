@@ -41,5 +41,5 @@ for idx, model_name in enumerate(testbed):
     print(results_frame)
 
 os.rename('temp_results.pickle','results/FRA_Scip.pickle')
-convert_dict_to_dataframe()
+convert_dict_to_dataframe(testbed)
 

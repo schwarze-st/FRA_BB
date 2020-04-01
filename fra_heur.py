@@ -48,9 +48,12 @@ class feasiblerounding(Heur):
         for key in self.options:
             setattr(self, key, self.options[key])
 
+
         self.ips_proven_empty = False
-        self.statistics = {'instance':'empty', 'eq_constrs':False, 'ips_nonempty':False, 'feasible':False,
-                           'accepted':False, 'time_heur':None,  'time_solveips':None, 'time_pp':None, 'time_scip':None}
+        self.statistics = {'depth':0, 'eq_constrs':False, 'ips_nonempty':False, 'feasible':False,
+                           'accepted':False, 'obj_FRA':None, 'imp_PP':None, 'obj_SCIP':None,
+                           'time_heur':None, 'time_solveips':None,'time_pp':None, 'time_scip':None}
+
 
     def heurexec(self, heurtiming, nodeinfeasible):
         """
@@ -60,11 +63,7 @@ class feasiblerounding(Heur):
         :param nodeinfeasible
         :return: returns SCIP_RESULT to solver
         """
-
-        name = self.model.getProbName()
-        depth = self.model.getDepth()
-        self.statistics['instance'] = name
-        self.statistics['depth'] = depth
+        self.statistics['depth'] = self.model.getDepth()
         self.timer_start = time()
 
         logging.info(">>>> Build inner parallel set")
@@ -279,11 +278,12 @@ class feasiblerounding(Heur):
         return 0
 
     def heurinitsol(self):
+        self.timer_start = None
         print(">>>> call heurinitsol()")
-        self.statistics['time_scip'] = self.model.getTotalTime()
 
     def heurexitsol(self):
-        self.statistics['time_heur'] = time() - self.timer_start
+        if self.timer_start:
+            self.statistics['time_heur'] = time() - self.timer_start
         self.statistics['time_scip'] = self.model.getTotalTime()
         with open('temp_results.pickle', 'ab') as handle:
             pickle.dump(self.statistics, handle, protocol=pickle.HIGHEST_PROTOCOL)
