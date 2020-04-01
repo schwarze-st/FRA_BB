@@ -17,12 +17,12 @@ def test_heur(model_path, model_name):
                   freq=5)
     m.readProblem(model_path)
     m.setIntParam('limits/restarts',0)
-    m.setRealParam("limits/time",720)
+    m.setRealParam("limits/time",50)
     m.setLongintParam("limits/nodes",1)
     m.optimize()
     return m
 
-def convert_dict_to_dataframe():
+def convert_dict_to_dataframe(problemnames):
     data = []
     with open('results/FRA_Scip.pickle', 'rb') as handle:
         try:
@@ -31,6 +31,6 @@ def convert_dict_to_dataframe():
         except EOFError:
             pass
     results_frame = pd.DataFrame(data)
-    results_frame.set_index('instance', inplace=True)
+    results_frame.index = problemnames
     results_frame.to_pickle('results/FRA_Scip_dataframe')
     print(results_frame.to_string())
