@@ -50,9 +50,7 @@ class feasiblerounding(Heur):
 
 
         self.ips_proven_empty = False
-        self.statistics = {'depth':0, 'eq_constrs':False, 'ips_nonempty':False, 'feasible':False,
-                           'accepted':False, 'obj_FRA':None, 'imp_PP':None, 'obj_SCIP':None,
-                           'time_heur':None, 'time_solveips':None,'time_pp':None, 'time_scip':None}
+        self.runs_statistics = []
 
 
     def heurexec(self, heurtiming, nodeinfeasible):
@@ -63,6 +61,7 @@ class feasiblerounding(Heur):
         :param nodeinfeasible
         :return: returns SCIP_RESULT to solver
         """
+        self.set_default_statistics()
         self.statistics['depth'] = self.model.getDepth()
         self.timer_start = time()
 
@@ -85,6 +84,7 @@ class feasiblerounding(Heur):
         ips_model, ips_vars = self.build_ips(mode)
         if self.ips_proven_empty:
             logging.info('>>>> Lefthand side larger than right hand side for some constraint, skip heuristic.')
+            self.save_exec_statistics()
             return {"result": SCIP_RESULT.DIDNOTRUN}
 
         logging.info(">>>> Optimize over EIPS")
@@ -131,11 +131,27 @@ class feasiblerounding(Heur):
 
             if solution_accepted:
                 self.statistics['accepted'] = True
+                self.save_exec_statistics()
                 return {"result": SCIP_RESULT.FOUNDSOL}
             else:
+                self.save_exec_statistics()
                 return {"result": SCIP_RESULT.DIDNOTFIND}
         else:
+            self.save_exec_statistics()
             return {"result": SCIP_RESULT.DIDNOTFIND}
+
+
+    def set_default_statistics(self):
+        self.statistics = {'depth': 0, 'eq_constrs': False, 'ips_nonempty': False, 'feasible': False,
+                       'accepted': False, 'obj_FRA': None, 'imp_PP': None, 'obj_SCIP': None,
+                       'time_heur': None, 'time_solveips': None, 'time_pp': None, 'time_scip': None}
+
+    def save_exec_statistics(self):
+        if self.timer_start:
+            self.statistics['time_heur'] = time() - self.timer_start
+        self.statistics['time_scip'] = self.model.getTotalTime()
+        self.runs_statistics.append(self.statistics)
+        print(self.runs_statistics)
 
     def create_sol(self, sol_dict):
 
@@ -282,11 +298,8 @@ class feasiblerounding(Heur):
         print(">>>> call heurinitsol()")
 
     def heurexitsol(self):
-        if self.timer_start:
-            self.statistics['time_heur'] = time() - self.timer_start
-        self.statistics['time_scip'] = self.model.getTotalTime()
         with open('temp_results.pickle', 'ab') as handle:
-            pickle.dump(self.statistics, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(self.runs_statistics, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def add_reduced_vars(self, reduced_model, sol_FRA):
         reduced_var_dict = {}
