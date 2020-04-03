@@ -14,11 +14,11 @@ def test_heur(model_path, model_name):
     m = Model(problemName=model_name)
     heuristic = feasiblerounding()
     m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
-                  freq=4)
+                  freq=1)
     m.readProblem(model_path)
     m.setIntParam('limits/restarts',0)
     m.setRealParam("limits/time",3600)
-    m.setLongintParam("limits/nodes",24)
+    m.setLongintParam("limits/nodes",1)
     m.optimize()
     return m
 

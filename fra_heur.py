@@ -257,7 +257,7 @@ class feasiblerounding(Heur):
                            <= rhs))
 
     def add_ips_constraints(self, ips_model, var_dict, mode):
-        
+
         linear_rows = self.model.getLPRowsData()
         for lrow in linear_rows:
             vlist = [col.getVar() for col in lrow.getCols()]
