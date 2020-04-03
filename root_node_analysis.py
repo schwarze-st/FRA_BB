@@ -23,8 +23,8 @@ for idx, model_name in enumerate(testbed):
     path_name = folder_name+'/'+ model_name
     try:
         m = test_heur(path_name, model_name)
-        m.writeStatistics("statistics")
-        with open('statistics') as f:
+        m.writeStatistics("run_statistics")
+        with open('run_statistics') as f:
             content = f.readlines()
         for line in content:
             if 'PyHeur' in line:
@@ -33,7 +33,7 @@ for idx, model_name in enumerate(testbed):
                 results_list.append(line_of_interest)
         del m
         print(results_list)
-        os.remove('statistics')
+        os.remove('run_statistics')
         problem_names.append(model_name[:-4])
     except:
         print('unexpected error occurred')
@@ -46,5 +46,5 @@ for idx, model_name in enumerate(testbed):
 
 os.rename('temp_results.pickle','results/FRA_Scip.pickle')
 convert_dict_to_dataframe(problem_names)
-print(error_probs)
+print('Problems with errors:',error_probs)
 
