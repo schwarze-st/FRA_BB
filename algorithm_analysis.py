@@ -20,6 +20,7 @@ def test_heur(model_path, model_name):
     m.setRealParam("limits/time",300)
     m.setLongintParam("limits/nodes",16)
     m.optimize()
+    m.freeProb()
     return m
 
 def convert_dict_to_dataframe():
