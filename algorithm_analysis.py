@@ -14,15 +14,15 @@ def test_heur(model_path, model_name):
     m = Model(problemName=model_name)
     heuristic = feasiblerounding()
     m.includeHeur(heuristic, "PyHeur", "feasible rounding heuristic", "Y", timingmask=SCIP_HEURTIMING.AFTERLPNODE,
-                  freq=1)
+                  freq=4)
     m.readProblem(model_path)
     m.setIntParam('limits/restarts',0)
-    m.setRealParam("limits/time",3600)
-    m.setLongintParam("limits/nodes",1)
+    m.setRealParam("limits/time",300)
+    m.setLongintParam("limits/nodes",16)
     m.optimize()
     return m
 
-def convert_dict_to_dataframe(problemnames):
+def convert_dict_to_dataframe():
     data = []
     with open('results/FRA_Scip.pickle', 'rb') as handle:
         try:
@@ -33,12 +33,10 @@ def convert_dict_to_dataframe(problemnames):
     results_frame = pd.DataFrame()
     for i in range(0,len(data)):
         temp_frame = pd.DataFrame(data[i])
-        temp_frame['name'] = problemnames[i]
         if i==0:
             results_frame = temp_frame
         else:
             results_frame = pd.concat([results_frame,temp_frame], ignore_index = True)
-        print(results_frame)
     results_frame = results_frame.reindex(columns=['name', 'depth', 'eq_constrs', 'feasible', 'accepted', 'obj_FRA',
                                                    'obj_SCIP', 'time_heur', 'time_solveips', 'time_pp', 'time_scip', 'impr_PP'])
     results_frame.to_pickle('results/FRA_Scip_dataframe')

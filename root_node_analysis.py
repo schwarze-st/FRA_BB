@@ -6,45 +6,27 @@ from datetime import *
 import os
 
 
-folder_name = 'collection'
+folder_name = 'benchmark2'
 logging.basicConfig(level=logging.INFO, filename='results/root_node_analysis_log_'+folder_name)
 now = datetime.now()
 dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
 logging.info('>>>>>>>>>>>>>>>> Running testbed ' + folder_name + " "+ dt_string + "<<<<<<<<<<<<<<<<<<<")
 testbed = read_all_test_instances(folder_name)
 print('Testing %i problems'%len(testbed))
-results_list = []
-problem_names = []
 error_probs = []
 
 for idx, model_name in enumerate(testbed):
     logging.info('testing problem ' + model_name)
     print('Testing model %s'%model_name)
     path_name = folder_name+'/'+ model_name
-    try:
-        m = test_heur(path_name, model_name)
-        m.writeStatistics("run_statistics")
-        with open('run_statistics') as f:
-            content = f.readlines()
-        for line in content:
-            if 'PyHeur' in line:
-                line_of_interest = line.split()
-                line_of_interest.remove(':')
-                results_list.append(line_of_interest)
-        del m
-        print(results_list)
-        os.remove('run_statistics')
-        problem_names.append(model_name[:-4])
-    except:
-        print('unexpected error occurred')
-        results_list.append([float('inf')]*6)
-        error_probs.append(model_name[:-4])
-    results_frame = pd.DataFrame(results_list, columns = ['Heuristic','ExecTime','SetupTime','Calls','Found','Best'])
-    results_frame.index = testbed[:idx+1]
-    results_frame.to_pickle('results/'+folder_name+'results')
-    print(results_frame)
+   # try
+    m = test_heur(path_name, model_name)
+    del m
+    #except:
+     #   print('unexpected error occurred')
+      #  error_probs.append(model_name[:-4])
 
 os.rename('temp_results.pickle','results/FRA_Scip.pickle')
-convert_dict_to_dataframe(problem_names)
+convert_dict_to_dataframe()
 print('Problems with errors:',error_probs)
 

@@ -138,7 +138,7 @@ class feasiblerounding(Heur):
 
     def start_run_statistics(self):
         self.run_statistics = {}
-        self.run_statistics = {'depth': self.model.getDepth(), 'eq_constrs': False, 'ips_nonempty': False, 'feasible': False,
+        self.run_statistics = {'name': self.model.getProbName(), 'depth': self.model.getDepth(), 'eq_constrs': False, 'ips_nonempty': False, 'feasible': False,
                        'accepted': False, 'obj_FRA': None, 'impr_PP': None, 'obj_SCIP': None,
                        'time_heur': None, 'time_solveips': None, 'time_pp': None, 'time_scip': None}
         self.ips_proven_empty = False
