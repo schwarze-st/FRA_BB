@@ -19,12 +19,12 @@ for idx, model_name in enumerate(testbed):
     logging.info('testing problem ' + model_name)
     print('Testing model %s'%model_name)
     path_name = folder_name+'/'+ model_name
-   # try
-    m = test_heur(path_name, model_name)
-    del m
-    #except:
-     #   print('unexpected error occurred')
-      #  error_probs.append(model_name[:-4])
+    try
+        m = test_heur(path_name, model_name)
+        del m
+    except:
+        print('unexpected error occurred')
+        error_probs.append(model_name[:-4])
 
 os.rename('temp_results.pickle','results/FRA_Scip.pickle')
 convert_dict_to_dataframe()
