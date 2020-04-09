@@ -19,7 +19,7 @@ for idx, model_name in enumerate(testbed):
     logging.info('testing problem ' + model_name)
     print('Testing model %s'%model_name)
     path_name = folder_name+'/'+ model_name
-    try
+    try:
         m = test_heur(path_name, model_name)
         del m
     except:
