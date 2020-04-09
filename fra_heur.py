@@ -295,6 +295,7 @@ class feasiblerounding(Heur):
         print(">>>> call heurinitsol()")
 
     def heurexitsol(self):
+        print(">>>> call heurexitsol()")
         with open('temp_results.pickle', 'ab') as handle:
             pickle.dump(self.statistics, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
