@@ -38,7 +38,7 @@ def convert_dict_to_dataframe():
             results_frame = temp_frame
         else:
             results_frame = pd.concat([results_frame,temp_frame], ignore_index = True)
-    results_frame = results_frame.reindex(columns=['name', 'depth', 'eq_constrs', 'pruned_prob','feasible', 'accepted', 'obj_FRA',
+    results_frame = results_frame.reindex(columns=['name', 'depth', 'eq_constrs', 'pruned_prob','ips_nonempty', 'feasible', 'accepted', 'obj_FRA',
                                                    'obj_SCIP', 'time_heur', 'time_solveips', 'time_pp', 'time_scip', 'impr_PP'])
     results_frame.to_pickle('results/FRA_Scip_dataframe')
     print(results_frame.to_string())
