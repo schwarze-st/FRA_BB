@@ -5,7 +5,7 @@ import logging
 import pickle
 import pandas as pd
 
-from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_HEURTIMING, quicksum, Expr
+from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_LPSOLSTAT, SCIP_HEURTIMING, quicksum, Expr
 from time import time
 
 FEAS_TOL = 1E-6
@@ -58,24 +58,32 @@ class feasiblerounding(Heur):
         :param nodeinfeasible
         :return: returns SCIP_RESULT to solver
         """
+
         self.start_run_statistics()
 
-        logging.info(">>>> Build inner parallel set")
         sol_dict = {}
         val_dict = {}
+
         if self.line_search:
             rel_sol_dict = self.get_sol_relaxation()
+
+        if self.model.getLPSolstat() != SCIP_LPSOLSTAT.OPTIMAL:
+            logging.info('>>>> Subproblem is pruned, skip heuristic.')
+            self.run_statistics['pruned_prob'] = True
+            self.save_run_statistics()
+            return {"result": SCIP_RESULT.DIDNOTRUN}
 
         if self.contains_equality_constrs():
             self.run_statistics['eq_constrs'] = True
             logging.info('>>>> Problem contains equality constraints on int vars, skip heuristic.')
+            self.save_run_statistics()
             return {"result": SCIP_RESULT.DIDNOTRUN}
-
 
         mode = self.mode
         if not (mode in ['original', 'deep_fixing']):
             logging.warning('Mode must be original or deep fixing, but is ' + mode)
 
+        logging.info(">>>> Build inner parallel set")
         ips_model, ips_vars = self.build_ips(mode)
         if self.ips_proven_empty:
             logging.info('>>>> Lefthand side larger than right hand side for some constraint, skip heuristic.')
@@ -121,7 +129,8 @@ class feasiblerounding(Heur):
             sol_model = self.model.getBestSol()
             solution_accepted = self.sol_is_accepted(sol_FRA)
             self.run_statistics['obj_FRA'] = val_dict[min(val_dict, key=val_dict.get)]
-            self.run_statistics['impr_PP'] = val_dict[mode] - val_dict[mode + '_ls']
+            if self.line_search:
+                self.run_statistics['impr_PP'] = val_dict[mode] - val_dict[mode + '_ls']
             self.run_statistics['obj_SCIP'] = self.model.getSolObjVal(sol_model, original=False)
 
             if solution_accepted:
@@ -138,7 +147,7 @@ class feasiblerounding(Heur):
 
     def start_run_statistics(self):
         self.run_statistics = {}
-        self.run_statistics = {'name': self.model.getProbName(), 'depth': self.model.getDepth(), 'eq_constrs': False, 'ips_nonempty': False, 'feasible': False,
+        self.run_statistics = {'name': self.model.getProbName(), 'depth': self.model.getDepth(), 'eq_constrs': False, 'pruned_prob': False, 'ips_nonempty': False, 'feasible': False,
                        'accepted': False, 'obj_FRA': None, 'impr_PP': None, 'obj_SCIP': None,
                        'time_heur': None, 'time_solveips': None, 'time_pp': None, 'time_scip': None}
         self.ips_proven_empty = False

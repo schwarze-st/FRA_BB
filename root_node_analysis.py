@@ -13,7 +13,7 @@ dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
 logging.info('>>>>>>>>>>>>>>>> Running testbed ' + folder_name + " "+ dt_string + "<<<<<<<<<<<<<<<<<<<")
 testbed = read_all_test_instances(folder_name)
 print('Testing %i problems'%len(testbed))
-error_probs = []git
+error_probs = []
 
 for idx, model_name in enumerate(testbed):
     logging.info('testing problem ' + model_name)
