@@ -40,7 +40,7 @@ class feasiblerounding(Heur):
         :return: returns nothing
         """
 
-        self.options = {'mode': 'original', 'delta': 0.999, 'line_search': True}
+        self.options = {'mode': 'original', 'delta': 0.999, 'line_search': False, 'diving': True}
         for key in options:
             self.options[key] = options[key]
 
@@ -79,12 +79,11 @@ class feasiblerounding(Heur):
             self.save_run_statistics()
             return {"result": SCIP_RESULT.DIDNOTRUN}
 
-        mode = self.mode
-        if not (mode in ['original', 'deep_fixing']):
-            logging.warning('Mode must be original or deep fixing, but is ' + mode)
+        if not (self.mode in ['original', 'deep_fixing']):
+            logging.warning('Mode must be original or deep fixing, but is ' + self.mode)
 
         logging.info(">>>> Build inner parallel set")
-        ips_model, ips_vars = self.build_ips(mode)
+        ips_model, ips_vars = self.build_ips()
         if self.ips_proven_empty:
             logging.info('>>>> Lefthand side larger than right hand side for some constraint, skip heuristic.')
             self.save_run_statistics()
@@ -103,20 +102,48 @@ class feasiblerounding(Heur):
         if ips_model.getStatus() == 'optimal':
 
             self.run_statistics['ips_nonempty'] = True
-            sol_FRA_current_mode = self.get_sol_submodel(ips_vars, ips_model)
+            sol_FRA_inital = self.get_sol_submodel(ips_vars, ips_model)
+
+            if self.diving:
+                print('>>>> Start Diving')
+                sol_FRA_diving = sol_FRA_inital
+                candidates, greedy = self.get_diving_candidates(sol_FRA_diving)
+                self.model.startProbing()
+                dive_itr = 1
+                while candidates:
+                    print('>>>> Diving Round ',str(dive_itr))
+                    self.model.fixVarProbing(greedy[0],greedy[1])
+                    #self.model.propagateProbing()
+                    ips_model_p, ips_vars_p = self.build_ips()
+                    self.set_model_params(ips_model_p)
+                    ips_model_p.hideOutput(True)
+                    ips_model_p.optimize()
+                    label_sol = 'Diving Nr.'+str(dive_itr)
+                    sol_FRA_diving = self.get_sol_submodel(ips_vars_p, ips_model_p)
+                    self.round_sol(sol_FRA_diving)
+                    sol_dict[label_sol] = sol_FRA_diving
+                    val_dict[label_sol] = self.get_obj_value(sol_dict[label_sol])
+
+                    dive_itr = dive_itr+1
+                    candidates, greedy = self.get_diving_candidates(sol_FRA_diving)
+                self.model.endProbing()
+                print('>>>> End Diving')
+
+                del ips_model_p
+                del ips_vars_p
 
             if self.line_search:
                 timer_pp = time()
-                line_search_sol = self.get_line_search_rounding(rel_sol_dict, sol_FRA_current_mode)
-                label_sol = mode + '_ls'
+                line_search_sol = self.get_line_search_rounding(rel_sol_dict, sol_FRA_inital)
+                label_sol = self.mode + '_ls'
                 sol_dict[label_sol] = self.fix_and_optimize(line_search_sol)
                 val_dict[label_sol] = self.get_obj_value(sol_dict[label_sol])
                 self.run_statistics['time_pp'] = time() - timer_pp
 
-            label_sol = mode
-            self.round_sol(sol_FRA_current_mode)
-            sol_dict[label_sol] = self.fix_and_optimize(sol_FRA_current_mode)
-            val_dict[label_sol] = self.get_obj_value(sol_dict[mode])
+            label_sol = self.mode
+            self.round_sol(sol_FRA_inital)
+            sol_dict[label_sol] = self.fix_and_optimize(sol_FRA_inital)
+            val_dict[label_sol] = self.get_obj_value(sol_dict[self.mode])
             logging.info(val_dict)
 
         del ips_model
@@ -124,13 +151,14 @@ class feasiblerounding(Heur):
 
         logging.info(val_dict)
         sol_FRA = self.get_best_sol(sol_dict, val_dict)
+        print(val_dict)
 
         if sol_FRA:
             sol_model = self.model.getBestSol()
             solution_accepted = self.sol_is_accepted(sol_FRA)
             self.run_statistics['obj_FRA'] = val_dict[min(val_dict, key=val_dict.get)]
             if self.line_search:
-                self.run_statistics['impr_PP'] = val_dict[mode] - val_dict[mode + '_ls']
+                self.run_statistics['impr_PP'] = val_dict[self.mode] - val_dict[self.mode + '_ls']
             self.run_statistics['obj_SCIP'] = self.model.getSolObjVal(sol_model, original=False)
 
             if solution_accepted:
@@ -158,10 +186,31 @@ class feasiblerounding(Heur):
             self.run_statistics['time_heur'] = time() - self.timer_start
         self.run_statistics['time_scip'] = self.model.getTotalTime()
         self.statistics.append(self.run_statistics)
-        print(self.statistics)
+        print('>>>> Run completed')
+
+    def get_diving_candidates(self, ips_sol):
+        candidates = []
+        greedy = None
+        best = -math.inf
+        original_vars = self.model.getVars(transformed=True)
+        for v in original_vars:
+            if (v.vtype() != 'CONTINUOUS') and (v.getLbLocal() != v.getUbLocal()):
+                candidates.append(v.name)
+                fix_value = round(ips_sol[v.name])
+                obj = v.getObj()
+                if fix_value <= 0:
+                    if obj > best:
+                        greedy = (v, fix_value, obj)
+                        best = obj
+                else:
+                    if abs(obj) > best:
+                        greedy = (v, fix_value, obj)
+                        best = abs(obj)
+
+        return candidates, greedy
+
 
     def create_sol(self, sol_dict):
-
         original_vars = self.model.getVars(transformed=True)
         sol = self.model.createSol()
         for v in original_vars:
@@ -215,40 +264,41 @@ class feasiblerounding(Heur):
                 int_values.append(sol_dict[var.name])
         return int_values
 
-    def add_vars_and_bounds(self, model, mode):
+    def add_vars_and_bounds(self, model):
         original_vars = self.model.getVars(transformed=True)
         var_dict = dict()
         for var in original_vars:
             lower = var.getLbLocal()
             upper = var.getUbLocal()
             if var.vtype() != 'CONTINUOUS':
-                if mode == 'deep_fixing' and round(var.getLPSol()) == var.getLPSol() and var.vtype() == 'BINARY':
+                if self.mode == 'deep_fixing' and round(var.getLPSol()) == var.getLPSol() and var.vtype() == 'BINARY':
                     lower = upper = var.getLPSol()
                 else:
-                    if lower is not None:
-                        lower = math.ceil(lower) - self.delta + 0.5
-                    if upper is not None:
-                        upper = math.floor(upper) + self.delta - 0.5
+                    if lower != upper:
+                        if lower is not None:
+                            lower = math.ceil(lower) - self.delta + 0.5
+                        if upper is not None:
+                            upper = math.floor(upper) + self.delta - 0.5
             var_dict[var.name] = model.addVar(name=var.name, vtype='CONTINUOUS', lb=lower, ub=upper, obj=var.getObj())
         self.set_objective_sense(model)
         return var_dict
 
-    def get_obj_value(self, sol_dict):
+    def get_obj_value(self, sol):
         variables = self.model.getVars(transformed=True)
-        obj_val = sum([v.getObj() * sol_dict[v.name] for v in variables])
+        obj_val = sum([v.getObj() * sol[v.name] for v in variables])
         return obj_val
 
     def enlargement_possible(self, vlist, clist):
         return all(vlist[i].vtype() != 'CONTINUOUS' for i in range(len(clist))) and all(
             clist[i].is_integer() for i in range(len(clist)))
 
-    def is_fixed(self, var):
+    def is_integer(self, var):
         return var.vtype() == 'BINARY' and round(var.getLPSol()) == var.getLPSol()
 
     def compute_fixing_enlargement(self, vlist, clist):
         fixing_enlargement = 0
         for i, var in enumerate(vlist):
-            if self.is_fixed(var):
+            if self.is_integer(var):
                 fixing_enlargement += abs(clist[i])
         return fixing_enlargement
 
@@ -265,16 +315,17 @@ class feasiblerounding(Heur):
                           (quicksum(var_dict[vlist[i].name] * clist[i] for i in range(len(vlist))) + const
                            <= rhs))
 
-    def add_ips_constraints(self, ips_model, var_dict, mode):
-
+    def add_ips_constraints(self, ips_model, var_dict):
         linear_rows = self.model.getLPRowsData()
         for lrow in linear_rows:
             vlist = [col.getVar() for col in lrow.getCols()]
             clist = lrow.getVals()
             const = lrow.getConstant()
 
-            beta = sum(abs(clist[i]) for i in range(len(clist)) if vlist[i].vtype() != 'CONTINUOUS')
-            if mode == 'deep_fixing':
+            # only values from integer variables, which are not fixed
+            beta = sum(abs(clist[i]) for i in range(len(clist))
+                       if ((vlist[i].vtype() != 'CONTINUOUS') and (vlist[i].getLbLocal()) != vlist[i].getUbLocal()))
+            if self.mode == 'deep_fixing':
                 fixing_enlargement = self.compute_fixing_enlargement(vlist, clist)
                 beta = beta - fixing_enlargement
             if self.enlargement_possible(vlist, clist):
@@ -301,10 +352,10 @@ class feasiblerounding(Heur):
 
     def heurinitsol(self):
         self.timer_start = None
-        print(">>>> call heurinitsol()")
+        print(">>>> Call heurinitsol()")
 
     def heurexitsol(self):
-        print(">>>> call heurexitsol()")
+        print(">>>> Call heurexitsol()")
         with open('temp_results.pickle', 'ab') as handle:
             pickle.dump(self.statistics, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -391,10 +442,10 @@ class feasiblerounding(Heur):
         del reduced_model
         return sol_FRA
 
-    def build_ips(self, mode):
+    def build_ips(self):
         ips_model = Model("ips")
-        ips_vars = self.add_vars_and_bounds(ips_model, mode)
-        self.add_ips_constraints(ips_model, ips_vars, mode)
+        ips_vars = self.add_vars_and_bounds(ips_model)
+        self.add_ips_constraints(ips_model, ips_vars)
         return ips_model, ips_vars
 
     def get_best_sol(self, sol_dict, val_dict):
