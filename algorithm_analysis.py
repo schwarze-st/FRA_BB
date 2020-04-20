@@ -1,6 +1,7 @@
 import os
 from fra_heur import *
 from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_HEURTIMING, quicksum
+import pandas as pd
 FEAS_TOL = 1E-6
 
 def read_all_test_instances(folder):
@@ -17,11 +18,11 @@ def test_heur(model_path, model_name):
                   freq=1)
     m.readProblem(model_path)
     m.setIntParam('limits/restarts',0)
-    m.setRealParam("limits/time",100)
+    m.setRealParam("limits/time",60)
     m.setLongintParam("limits/nodes",1)
     m.optimize()
     m.freeProb()
-    return m
+    del m
 
 def convert_dict_to_dataframe():
     data = []

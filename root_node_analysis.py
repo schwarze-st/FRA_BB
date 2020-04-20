@@ -1,11 +1,11 @@
 from fra_heur import *
 from algorithm_analysis import *
 import logging
-import pandas as pd
 from datetime import *
 import os
+import tracemalloc
 
-
+tracemalloc.start()
 folder_name = 'collection'
 logging.basicConfig(level=logging.INFO, filename='results/root_node_analysis_log_'+folder_name)
 now = datetime.now()
@@ -20,13 +20,15 @@ for idx, model_name in enumerate(testbed):
     print('Testing model %s'%model_name)
     path_name = folder_name+'/'+ model_name
     try:
-        m = test_heur(path_name, model_name)
-        del m
+        test_heur(path_name, model_name)
     except:
         print('unexpected error occurred')
         error_probs.append(model_name[:-4])
-
+    current, peak = tracemalloc.get_traced_memory()
+    logging.INFO(f"Current memory usage is {current / 10 ** 6}MB; Peak was {peak / 10 ** 6}MB")
 os.rename('temp_results.pickle','results/FRA_Scip.pickle')
 convert_dict_to_dataframe()
 print('Problems with errors:',error_probs)
+tracemalloc.stop()
+
 

@@ -1,9 +1,6 @@
-import glob
 import math
-import os
 import logging
 import pickle
-import pandas as pd
 
 from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_LPSOLSTAT, SCIP_HEURTIMING, quicksum, Expr
 from time import time
@@ -81,6 +78,8 @@ class feasiblerounding(Heur):
 
         if not (self.mode in ['original', 'deep_fixing']):
             logging.warning('Mode must be original or deep fixing, but is ' + self.mode)
+        elif self.mode == 'deep_fixing' and self.diving == True:
+            logging.warning('Deep fixing and diving in combination is not recommended')
 
         logging.info(">>>> Build inner parallel set")
         ips_model, ips_vars = self.build_ips()
@@ -102,12 +101,13 @@ class feasiblerounding(Heur):
         if ips_model.getStatus() == 'optimal':
 
             self.run_statistics['ips_nonempty'] = True
-            sol_FRA_inital = self.get_sol_submodel(ips_vars, ips_model)
+            sol_root = self.get_sol_submodel(ips_vars, ips_model)
 
             if self.diving:
                 print('>>>> Start Diving')
-                sol_FRA_diving = sol_FRA_inital
-                candidates, greedy = self.get_diving_candidates(sol_FRA_diving)
+                sol_diving = {}
+                obj_diving = math.inf
+                candidates, greedy = self.get_diving_candidates(sol_root)
                 self.model.startProbing()
                 dive_itr = 1
                 while candidates:
@@ -120,44 +120,46 @@ class feasiblerounding(Heur):
                     ips_model_p.hideOutput(True)
                     ips_model_p.optimize()
 
-                    label_sol = 'Diving Nr.'+str(dive_itr)
-                    sol_FRA_diving = self.get_sol_submodel(ips_vars_p, ips_model_p)
-                    self.round_sol(sol_FRA_diving)
-                    sol_dict[label_sol] = sol_FRA_diving
-                    val_dict[label_sol] = self.get_obj_value(sol_dict[label_sol])
+                    sol_diving_new = self.get_sol_submodel(ips_vars_p, ips_model_p)
+                    self.round_sol(sol_diving_new)
+                    obj_diving_new = self.get_obj_value(sol_diving_new)
 
-                    candidates, greedy = self.get_diving_candidates(sol_FRA_diving)
+                    if (len(sol_diving)==0) or obj_diving_new < obj_diving:
+                        sol_diving = sol_diving_new
+                        obj_diving = obj_diving_new
+
+                    candidates, greedy = self.get_diving_candidates(sol_diving_new)
                     dive_itr = dive_itr+1
                 self.model.endProbing()
                 print('>>>> End Diving')
+                sol_dict['diving'] = sol_diving
+                val_dict['diving'] = obj_diving
 
                 del ips_model_p
                 del ips_vars_p
 
             if self.line_search:
                 timer_pp = time()
-                line_search_sol = self.get_line_search_rounding(rel_sol_dict, sol_FRA_inital)
+                line_search_sol = self.get_line_search_rounding(rel_sol_dict, sol_root)
                 label_sol = self.mode + '_ls'
                 sol_dict[label_sol] = self.fix_and_optimize(line_search_sol)
                 val_dict[label_sol] = self.get_obj_value(sol_dict[label_sol])
                 self.run_statistics['time_pp'] = time() - timer_pp
 
             label_sol = self.mode
-            self.round_sol(sol_FRA_inital)
-            sol_dict[label_sol] = self.fix_and_optimize(sol_FRA_inital)
+            self.round_sol(sol_root)
+            sol_dict[label_sol] = self.fix_and_optimize(sol_root)
             val_dict[label_sol] = self.get_obj_value(sol_dict[self.mode])
-            logging.info(val_dict)
 
         del ips_model
         del ips_vars
 
         logging.info(val_dict)
-        sol_FRA = self.get_best_sol(sol_dict, val_dict)
-        print(val_dict)
+        sol_best = self.get_best_sol(sol_dict, val_dict)
 
-        if sol_FRA:
+        if sol_best:
             sol_model = self.model.getBestSol()
-            solution_accepted = self.sol_is_accepted(sol_FRA)
+            solution_accepted = self.sol_is_accepted(sol_best)
             self.run_statistics['obj_FRA'] = val_dict[min(val_dict, key=val_dict.get)]
             if self.line_search:
                 self.run_statistics['impr_PP'] = val_dict[self.mode] - val_dict[self.mode + '_ls']
@@ -420,12 +422,10 @@ class feasiblerounding(Heur):
 
         if rounding_feasible == 0:
             logging.warning(">>>> ips feasible, but no feasible rounding")
+            logging.debug('Maximum violation of LP row: ' + str(self.get_lp_violation(sol)))
         else:
             self.run_statistics['feasible'] = True
-
         logging.info(">>>> accepted solution? %s" % ("yes" if solution_accepted == 1 else "no"))
-
-        logging.debug('Maximum violation of LP row: ' + str(self.get_lp_violation(sol)))
 
         return solution_accepted
 
@@ -441,6 +441,7 @@ class feasiblerounding(Heur):
         reduced_model.hideOutput(True)
         reduced_model.optimize()
         sol_FRA = self.get_sol_submodel(reduced_model_vars, reduced_model)
+        reduced_model.freeProb()
         del reduced_model
         return sol_FRA
 
