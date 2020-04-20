@@ -113,19 +113,21 @@ class feasiblerounding(Heur):
                 while candidates:
                     print('>>>> Diving Round ',str(dive_itr))
                     self.model.fixVarProbing(greedy[0],greedy[1])
-                    #self.model.propagateProbing()
+                    cutoff, numberofreductions = self.model.propagateProbing(-1)
+                    print('>>>> Propagation yielded {} domain reduction(s)'.format(numberofreductions))
                     ips_model_p, ips_vars_p = self.build_ips()
                     self.set_model_params(ips_model_p)
                     ips_model_p.hideOutput(True)
                     ips_model_p.optimize()
+
                     label_sol = 'Diving Nr.'+str(dive_itr)
                     sol_FRA_diving = self.get_sol_submodel(ips_vars_p, ips_model_p)
                     self.round_sol(sol_FRA_diving)
                     sol_dict[label_sol] = sol_FRA_diving
                     val_dict[label_sol] = self.get_obj_value(sol_dict[label_sol])
 
-                    dive_itr = dive_itr+1
                     candidates, greedy = self.get_diving_candidates(sol_FRA_diving)
+                    dive_itr = dive_itr+1
                 self.model.endProbing()
                 print('>>>> End Diving')
 
