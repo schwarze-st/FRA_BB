@@ -20,6 +20,7 @@ def test_heur(model_path, model_name):
     m.setIntParam('limits/restarts',0)
     m.setRealParam("limits/time",60)
     m.setLongintParam("limits/nodes",1)
+    m.hideOutput(True)
     m.optimize()
     m.freeProb()
     del m

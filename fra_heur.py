@@ -1,6 +1,7 @@
 import math
 import logging
 import pickle
+import numpy as np
 
 from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_LPSOLSTAT, SCIP_HEURTIMING, quicksum, Expr
 from time import time
@@ -107,13 +108,15 @@ class feasiblerounding(Heur):
                 print('>>>> Start Diving')
                 sol_diving = {}
                 obj_diving = math.inf
-                candidates, greedy = self.get_diving_candidates(sol_root)
+                candidates, greedy = self.get_diving_candidates_2(sol_root)
                 self.model.startProbing()
                 dive_itr = 1
-                while candidates:
+                while greedy and dive_itr<=30:
                     print('>>>> Diving Round ',str(dive_itr))
                     self.model.fixVarProbing(greedy[0],greedy[1])
                     cutoff, numberofreductions = self.model.propagateProbing(-1)
+                    if cutoff:
+                        logging.WARNING("Diving-LP not feasible anymore")
                     print('>>>> Propagation yielded {} domain reduction(s)'.format(numberofreductions))
                     ips_model_p, ips_vars_p = self.build_ips()
                     self.set_model_params(ips_model_p)
@@ -122,14 +125,16 @@ class feasiblerounding(Heur):
 
                     sol_diving_new = self.get_sol_submodel(ips_vars_p, ips_model_p)
                     self.round_sol(sol_diving_new)
+                    sol_diving_new = self.fix_and_optimize(sol_diving_new)
                     obj_diving_new = self.get_obj_value(sol_diving_new)
-
-                    if (len(sol_diving)==0) or obj_diving_new < obj_diving:
+                    if (not sol_diving) or obj_diving_new < obj_diving:
+                        print('>>>> Diving yielded better objective: ', obj_diving_new)
                         sol_diving = sol_diving_new
                         obj_diving = obj_diving_new
 
-                    candidates, greedy = self.get_diving_candidates(sol_diving_new)
+                    candidates, greedy = self.get_diving_candidates_2(sol_diving_new)
                     dive_itr = dive_itr+1
+                    ips_model_p.freeProb()
                 self.model.endProbing()
                 print('>>>> End Diving')
                 sol_dict['diving'] = sol_diving
@@ -154,7 +159,7 @@ class feasiblerounding(Heur):
         del ips_model
         del ips_vars
 
-        logging.info(val_dict)
+        print(val_dict)
         sol_best = self.get_best_sol(sol_dict, val_dict)
 
         if sol_best:
@@ -202,7 +207,7 @@ class feasiblerounding(Heur):
                 candidates.append(v.name)
                 fix_value = round(ips_sol[v.name])
                 obj = v.getObj()
-                if fix_value <= 0:
+                if fix_value <= 0 and obj >= 0:
                     if obj > best:
                         greedy = (v, fix_value, obj)
                         best = obj
@@ -212,6 +217,32 @@ class feasiblerounding(Heur):
                         best = abs(obj)
 
         return candidates, greedy
+
+    def get_diving_candidates_2(self, ips_sol):
+        greedy = None
+        best = 0
+        original_vars = self.model.getVars(transformed=True)
+        linear_rows = self.model.getLPRowsData()
+        for v in original_vars:
+            if (v.vtype() != 'CONTINUOUS') and (v.getLbLocal() != v.getUbLocal()):
+                fix_value = round(ips_sol[v.name])
+                measure = 0
+                for row in linear_rows:
+                    vars = [col.getVar().name for col in row.getCols()]
+                    if v.name in vars:
+                        normit = np.linalg.norm(row.getVals())
+                        ind = vars.index(v.name)
+                        bij = row.getVals()[ind]
+                        measure = measure + (bij*(ips_sol[v.name]-fix_value)+0.5*abs(bij))/normit
+                if measure >= best:
+                    best = measure
+                    greedy = (v, fix_value)
+        print('>>>> Best measure: ', best)
+        return [], greedy
+
+
+
+
 
 
     def create_sol(self, sol_dict):

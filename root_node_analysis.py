@@ -25,7 +25,7 @@ for idx, model_name in enumerate(testbed):
         print('unexpected error occurred')
         error_probs.append(model_name[:-4])
     current, peak = tracemalloc.get_traced_memory()
-    logging.INFO(f"Current memory usage is {current / 10 ** 6}MB; Peak was {peak / 10 ** 6}MB")
+    print(f"Current memory usage is {current / 10 ** 6}MB; Peak was {peak / 10 ** 6}MB")
 os.rename('temp_results.pickle','results/FRA_Scip.pickle')
 convert_dict_to_dataframe()
 print('Problems with errors:',error_probs)
