@@ -108,7 +108,8 @@ class feasiblerounding(Heur):
                 print('>>>> Start Diving')
                 sol_diving = {}
                 obj_diving = math.inf
-                candidates, greedy = self.get_diving_candidates_2(sol_root)
+                self.computeB()
+                candidates, greedy = self.get_diving_candidates_3(sol_root)
                 self.model.startProbing()
                 dive_itr = 1
                 while greedy and dive_itr<=30:
@@ -132,7 +133,7 @@ class feasiblerounding(Heur):
                         sol_diving = sol_diving_new
                         obj_diving = obj_diving_new
 
-                    candidates, greedy = self.get_diving_candidates_2(sol_diving_new)
+                    candidates, greedy = self.get_diving_candidates_3(sol_diving_new)
                     dive_itr = dive_itr+1
                     ips_model_p.freeProb()
                 self.model.endProbing()
@@ -245,6 +246,57 @@ class feasiblerounding(Heur):
         print('>>>> Best measure: ', measure[name])
         print('>>>> It took: ',str(time()-start_calc))
         return [], greedy
+
+    def get_diving_candidates_3(self, ips_sol):
+        original_vars = self.model.getVars(transformed=True)
+        variables = {v.name: v for v in original_vars if self.int_and_not_fixed(v)}
+
+        n = len(self.B_index_dict)
+        B_abs = np.zeros(self.B.shape)
+        E = np.zeros([n,n])
+        for v in variables:
+            y = ips_sol[v]
+            y_check = round(ips_sol[v])
+            ind = self.B_index_dict[v]
+            E[ind,ind] = (y-y_check)
+            B_abs[:,ind] = np.abs(self.B[:,ind])
+
+        measure = np.sum(self.B@E, axis=0)+np.sum(B_abs, axis=0)
+        ind_greedy = np.argmax(measure)
+        greedy_name = list(self.B_index_dict)[ind_greedy]
+        print(greedy_name)
+        v = variables[greedy_name]
+        val = round(ips_sol[greedy_name])
+        greedy = (v,val)
+
+        return [], greedy
+
+
+    def computeB(self):
+        original_vars = self.model.getVars(transformed=True)
+        linear_rows = self.model.getLPRowsData()
+        B_index_dict = {}
+        index = 0
+        for v in original_vars:
+            if v.vtype() != 'CONTINUOUS':
+                B_index_dict[v.name] = index
+                index += 1
+        B = np.zeros([len(linear_rows),index])
+        for i,row in enumerate(linear_rows):
+            cols = row.getCols()
+            for j,col in enumerate(cols):
+                v = col.getVar()
+                if v.vtype() != 'CONTINUOUS':
+                    B[i,B_index_dict[v.name]]
+        norm_b = np.linalg.norm(B,axis=1)
+        norm_b[norm_b==0] = 1
+        self.B = np.diag(1/norm_b) @ B
+        self.B_index_dict = B_index_dict
+
+
+
+
+
 
     def int_and_not_fixed(self, v):
         return (v.vtype() != 'CONTINUOUS') and (v.getLbLocal() != v.getUbLocal())
