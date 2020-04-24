@@ -219,31 +219,35 @@ class feasiblerounding(Heur):
         return candidates, greedy
 
     def get_diving_candidates_2(self, ips_sol):
-        greedy = None
-        best = 0
+        start_calc = time()
         original_vars = self.model.getVars(transformed=True)
         linear_rows = self.model.getLPRowsData()
-        for v in original_vars:
-            if (v.vtype() != 'CONTINUOUS') and (v.getLbLocal() != v.getUbLocal()):
-                fix_value = round(ips_sol[v.name])
-                measure = 0
-                for row in linear_rows:
-                    vars = [col.getVar().name for col in row.getCols()]
-                    if v.name in vars:
-                        normit = np.linalg.norm(row.getVals())
-                        ind = vars.index(v.name)
-                        bij = row.getVals()[ind]
-                        measure = measure + (bij*(ips_sol[v.name]-fix_value)+0.5*abs(bij))/normit
-                if measure >= best:
-                    best = measure
-                    greedy = (v, fix_value)
-        print('>>>> Best measure: ', best)
+        greedy = None
+        variables = {v.name : v for v in original_vars if self.int_and_not_fixed(v)}
+        measure = {v.name : 0 for v in original_vars if self.int_and_not_fixed(v)}
+        fix_values = {v.name : round(ips_sol[v.name]) for v in original_vars if self.int_and_not_fixed(v)}
+        for row in linear_rows:
+            row_vars = []
+            row_vars_vals = []
+            cols = row.getCols()
+            vals = row.getVals()
+            for i in range(len(cols)):
+                if self.int_and_not_fixed(cols[i].getVar()):
+                    row_vars.append(cols[i].getVar().name)
+                    row_vars_vals.append(vals[i])
+            normit = np.linalg.norm(row_vars_vals)
+            for i,var in enumerate(row_vars):
+                bij = row_vars_vals[i]
+                measure[var] = measure[var] + (bij*(ips_sol[var]-fix_values[var]) + 0.5*abs(bij)) / normit
+        if measure:
+            name = max(measure, key=measure.get)
+            greedy = (variables[name],fix_values[name])
+        print('>>>> Best measure: ', measure[name])
+        print('>>>> It took: ',str(time()-start_calc))
         return [], greedy
 
-
-
-
-
+    def int_and_not_fixed(self, v):
+        return (v.vtype() != 'CONTINUOUS') and (v.getLbLocal() != v.getUbLocal())
 
     def create_sol(self, sol_dict):
         original_vars = self.model.getVars(transformed=True)
