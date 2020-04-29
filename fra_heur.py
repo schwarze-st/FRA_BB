@@ -136,13 +136,14 @@ class feasiblerounding(Heur):
                     candidates, greedy = self.get_diving_candidates_3(sol_diving_new)
                     dive_itr = dive_itr+1
                     ips_model_p.freeProb()
+                    del ips_model_p
+                    del ips_vars_p
                 self.model.endProbing()
                 print('>>>> End Diving')
                 sol_dict['diving'] = sol_diving
                 val_dict['diving'] = obj_diving
 
-                del ips_model_p
-                del ips_vars_p
+
 
             if self.line_search:
                 timer_pp = time()
@@ -261,13 +262,15 @@ class feasiblerounding(Heur):
             E[ind,ind] = (y-y_check)
             B_abs[:,ind] = np.abs(self.B[:,ind])
 
-        measure = np.sum(self.B@E, axis=0)+np.sum(B_abs, axis=0)
-        ind_greedy = np.argmax(measure)
-        greedy_name = list(self.B_index_dict)[ind_greedy]
-        print(greedy_name)
-        v = variables[greedy_name]
-        val = round(ips_sol[greedy_name])
-        greedy = (v,val)
+        measure = np.sum(self.B@E,axis=0)+np.sum(B_abs, axis=0)
+        if np.amax(measure) > 0:
+            ind_greedy = np.argmax(measure)
+            greedy_name = list(self.B_index_dict)[ind_greedy]
+            v = variables[greedy_name]
+            val = round(ips_sol[greedy_name])
+            greedy = (v,val)
+        else:
+            greedy = []
 
         return [], greedy
 
@@ -284,10 +287,11 @@ class feasiblerounding(Heur):
         B = np.zeros([len(linear_rows),index])
         for i,row in enumerate(linear_rows):
             cols = row.getCols()
+            vals = row.getVals()
             for j,col in enumerate(cols):
                 v = col.getVar()
                 if v.vtype() != 'CONTINUOUS':
-                    B[i,B_index_dict[v.name]]
+                    B[i,B_index_dict[v.name]] = vals[j]
         norm_b = np.linalg.norm(B,axis=1)
         norm_b[norm_b==0] = 1
         self.B = np.diag(1/norm_b) @ B
