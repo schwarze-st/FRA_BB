@@ -5,7 +5,8 @@ import pandas as pd
 FEAS_TOL = 1E-6
 
 def read_all_test_instances(folder):
-    files = os.listdir('./'+folder)
+    os.chdir(folder)
+    files = os.listdir('./')
     suffix = ".mps"
     pyfiles = [file for file in files if file.endswith(suffix)]
     testset = [file for file in pyfiles]

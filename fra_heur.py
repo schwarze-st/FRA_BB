@@ -3,7 +3,7 @@ import logging
 import pickle
 import numpy as np
 
-from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_LPSOLSTAT, SCIP_HEURTIMING, quicksum, Expr
+from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_LPSOLSTAT, quicksum
 from time import time
 
 FEAS_TOL = 1E-6
@@ -12,19 +12,6 @@ FEAS_TOL = 1E-6
 #
 # heuristic: feasible rounding approach
 #
-
-def get_switching_points(int_sol1, int_sol2):
-    switching_points = [0, 1]
-    for j in range(len(int_sol1)):
-        eta_j = int_sol2[j] - int_sol1[j]
-        if eta_j != 0:
-            lower = math.ceil(int_sol1[j] + min(0, eta_j) - 1 / 2)
-            upper = math.floor(int_sol1[j] + max(0, eta_j) - 1 / 2)
-            for l in range(lower, upper + 1):
-                switching_points.append((1 / 2 - int_sol1[j] + l) / eta_j)
-    logging.info("Computed %i switching points"%len(switching_points))
-    return sorted(set(switching_points))
-
 
 class feasiblerounding(Heur):
 
@@ -42,11 +29,12 @@ class feasiblerounding(Heur):
         for key in options:
             self.options[key] = options[key]
 
-        #Set class variables with names as keys and their corresponding values from the dictionary
+        # Set class variables with names as keys and their corresponding values from the dictionary
         for key in self.options:
             setattr(self, key, self.options[key])
 
         self.statistics = []
+        self.timer_start = None
 
     def heurexec(self, heurtiming, nodeinfeasible):
         """
@@ -62,11 +50,8 @@ class feasiblerounding(Heur):
         sol_dict = {}
         val_dict = {}
 
-        if self.line_search:
-            rel_sol_dict = self.get_sol_relaxation()
-
         if self.model.getLPSolstat() != SCIP_LPSOLSTAT.OPTIMAL:
-            logging.info('>>>> Subproblem is pruned, skip heuristic.')
+            logging.info('>>>> Sub-problem is pruned, skip heuristic.')
             self.run_statistics['pruned_prob'] = True
             self.save_run_statistics()
             return {"result": SCIP_RESULT.DIDNOTRUN}
@@ -90,14 +75,13 @@ class feasiblerounding(Heur):
             return {"result": SCIP_RESULT.DIDNOTRUN}
 
         logging.info(">>>> Optimize over EIPS")
-        self.set_model_params(ips_model)
         print(">>>> Optimize starting")
-        ips_model.hideOutput(True)
         timer_ips = time()
+        ips_model.hideOutput(True)
         ips_model.optimize()
         self.run_statistics['time_solveips'] = time() - timer_ips
         print(">>>> Optimize done")
-        logging.info("Model status is:"+str(ips_model.getStatus()) )
+        logging.info("Model status is:" + str(ips_model.getStatus()))
 
         if ips_model.getStatus() == 'optimal':
 
@@ -108,19 +92,20 @@ class feasiblerounding(Heur):
                 print('>>>> Start Diving')
                 sol_diving = {}
                 obj_diving = math.inf
+                start_d = time()
                 self.computeB()
                 candidates, greedy = self.get_diving_candidates_3(sol_root)
+                print('>>>> candidate search took', str(time() - start_d), ' seconds')
                 self.model.startProbing()
                 dive_itr = 1
-                while greedy and dive_itr<=30:
-                    print('>>>> Diving Round ',str(dive_itr))
+                while greedy and dive_itr <= 30:
+                    print('>>>> Diving Round ', str(dive_itr))
                     self.model.fixVarProbing(greedy[0],greedy[1])
                     cutoff, numberofreductions = self.model.propagateProbing(-1)
                     if cutoff:
-                        logging.WARNING("Diving-LP not feasible anymore")
+                        logging.warning("Diving-LP not feasible anymore")
                     print('>>>> Propagation yielded {} domain reduction(s)'.format(numberofreductions))
                     ips_model_p, ips_vars_p = self.build_ips()
-                    self.set_model_params(ips_model_p)
                     ips_model_p.hideOutput(True)
                     ips_model_p.optimize()
 
@@ -133,8 +118,10 @@ class feasiblerounding(Heur):
                         sol_diving = sol_diving_new
                         obj_diving = obj_diving_new
 
+                    start_d = time()
                     candidates, greedy = self.get_diving_candidates_3(sol_diving_new)
-                    dive_itr = dive_itr+1
+                    print('>>>> candidate search took ',str(time()-start_d),' seconds')
+                    dive_itr = dive_itr + 1
                     ips_model_p.freeProb()
                     del ips_model_p
                     del ips_vars_p
@@ -143,10 +130,9 @@ class feasiblerounding(Heur):
                 sol_dict['diving'] = sol_diving
                 val_dict['diving'] = obj_diving
 
-
-
             if self.line_search:
                 timer_pp = time()
+                rel_sol_dict = self.get_sol_relaxation()
                 line_search_sol = self.get_line_search_rounding(rel_sol_dict, sol_root)
                 label_sol = self.mode + '_ls'
                 sol_dict[label_sol] = self.fix_and_optimize(line_search_sol)
@@ -183,12 +169,12 @@ class feasiblerounding(Heur):
             self.save_run_statistics()
             return {"result": SCIP_RESULT.DIDNOTFIND}
 
-
     def start_run_statistics(self):
         self.run_statistics = {}
-        self.run_statistics = {'name': self.model.getProbName(), 'depth': self.model.getDepth(), 'eq_constrs': False, 'pruned_prob': False, 'ips_nonempty': False, 'feasible': False,
-                       'accepted': False, 'obj_FRA': None, 'impr_PP': None, 'obj_SCIP': None,
-                       'time_heur': None, 'time_solveips': None, 'time_pp': None, 'time_scip': None}
+        self.run_statistics = {'name': self.model.getProbName(), 'depth': self.model.getDepth(), 'eq_constrs': False,
+                               'pruned_prob': False, 'ips_nonempty': False, 'feasible': False,
+                               'accepted': False, 'obj_FRA': None, 'impr_PP': None, 'obj_SCIP': None,
+                               'time_heur': None, 'time_solveips': None, 'time_pp': None, 'time_scip': None}
         self.ips_proven_empty = False
         self.timer_start = time()
 
@@ -225,9 +211,9 @@ class feasiblerounding(Heur):
         original_vars = self.model.getVars(transformed=True)
         linear_rows = self.model.getLPRowsData()
         greedy = None
-        variables = {v.name : v for v in original_vars if self.int_and_not_fixed(v)}
-        measure = {v.name : 0 for v in original_vars if self.int_and_not_fixed(v)}
-        fix_values = {v.name : round(ips_sol[v.name]) for v in original_vars if self.int_and_not_fixed(v)}
+        variables = {v.name: v for v in original_vars if self.int_and_not_fixed(v)}
+        measure = {v.name: 0 for v in original_vars if self.int_and_not_fixed(v)}
+        fix_values = {v.name: round(ips_sol[v.name]) for v in original_vars if self.int_and_not_fixed(v)}
         for row in linear_rows:
             row_vars = []
             row_vars_vals = []
@@ -243,9 +229,8 @@ class feasiblerounding(Heur):
                 measure[var] = measure[var] + (bij*(ips_sol[var]-fix_values[var]) + 0.5*abs(bij)) / normit
         if measure:
             name = max(measure, key=measure.get)
-            greedy = (variables[name],fix_values[name])
-        print('>>>> Best measure: ', measure[name])
-        print('>>>> It took: ',str(time()-start_calc))
+            greedy = (variables[name], fix_values[name])
+        print('>>>> It took: ', str(time() - start_calc))
         return [], greedy
 
     def get_diving_candidates_3(self, ips_sol):
@@ -262,9 +247,9 @@ class feasiblerounding(Heur):
             E[ind,ind] = (y-y_check)
             B_abs[:,ind] = np.abs(self.B[:,ind])
 
-        measure = np.sum(self.B@E,axis=0)+np.sum(B_abs, axis=0)
+        measure = np.sum(self.B@E, axis=0) + np.sum(B_abs, axis=0)
         if np.amax(measure) > 0:
-            ind_greedy = np.argmax(measure)
+            ind_greedy = int(np.argmax(measure))
             greedy_name = list(self.B_index_dict)[ind_greedy]
             v = variables[greedy_name]
             val = round(ips_sol[greedy_name])
@@ -273,7 +258,6 @@ class feasiblerounding(Heur):
             greedy = []
 
         return [], greedy
-
 
     def computeB(self):
         original_vars = self.model.getVars(transformed=True)
@@ -292,15 +276,10 @@ class feasiblerounding(Heur):
                 v = col.getVar()
                 if v.vtype() != 'CONTINUOUS':
                     B[i,B_index_dict[v.name]] = vals[j]
-        norm_b = np.linalg.norm(B,axis=1)
-        norm_b[norm_b==0] = 1
-        self.B = np.diag(1/norm_b) @ B
+        norm_b = np.linalg.norm(B, axis=1)
+        norm_b[norm_b == 0] = 1
+        self.B = np.diag(1 / norm_b) @ B
         self.B_index_dict = B_index_dict
-
-
-
-
-
 
     def int_and_not_fixed(self, v):
         return (v.vtype() != 'CONTINUOUS') and (v.getLbLocal() != v.getUbLocal())
@@ -446,7 +425,6 @@ class feasiblerounding(Heur):
         return 0
 
     def heurinitsol(self):
-        self.timer_start = None
         print(">>>> Call heurinitsol()")
 
     def heurexitsol(self):
@@ -454,14 +432,14 @@ class feasiblerounding(Heur):
         with open('temp_results.pickle', 'ab') as handle:
             pickle.dump(self.statistics, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    def add_reduced_vars(self, reduced_model, sol_FRA):
+    def add_reduced_vars(self, reduced_model, sol_fra):
         reduced_var_dict = {}
         original_vars = self.model.getVars(transformed=True)
         for var in original_vars:
             lower = var.getLbLocal()
             upper = var.getUbLocal()
             if var.vtype() != 'CONTINUOUS':
-                lower = upper = sol_FRA[var.name]
+                lower = upper = sol_fra[var.name]
             reduced_var_dict[var.name] = reduced_model.addVar(name=var.name, vtype='CONTINUOUS', lb=lower, ub=upper,
                                                               obj=var.getObj())
         self.set_objective_sense(reduced_model)
@@ -481,11 +459,11 @@ class feasiblerounding(Heur):
             if v.vtype() != 'CONTINUOUS':
                 sol[v.name] = int(round(sol[v.name]))
 
-    def get_sol_submodel(self, vars, model):
+    def get_sol_submodel(self, model_vars, model):
         sol = {}
         original_vars = self.model.getVars(transformed=True)
         for v in original_vars:
-            var_value = model.getVal(vars[v.name])
+            var_value = model.getVal(model_vars[v.name])
             sol[v.name] = var_value
         return sol
 
@@ -520,21 +498,16 @@ class feasiblerounding(Heur):
 
         return solution_accepted
 
-    def set_model_params(self, model):
-        model.setIntParam('display/freq', 0)
-        model.setBoolParam('display/relevantstats', False)
-
-    def fix_and_optimize(self, sol_FRA):
+    def fix_and_optimize(self, sol_fra):
         reduced_model = Model('reduced_model')
-        reduced_model_vars = self.add_reduced_vars(reduced_model, sol_FRA)
+        reduced_model_vars = self.add_reduced_vars(reduced_model, sol_fra)
         self.add_model_constraints(reduced_model, reduced_model_vars)
-        self.set_model_params(reduced_model)
         reduced_model.hideOutput(True)
         reduced_model.optimize()
-        sol_FRA = self.get_sol_submodel(reduced_model_vars, reduced_model)
+        sol_fra = self.get_sol_submodel(reduced_model_vars, reduced_model)
         reduced_model.freeProb()
         del reduced_model
-        return sol_FRA
+        return sol_fra
 
     def build_ips(self):
         ips_model = Model("ips")
@@ -543,12 +516,28 @@ class feasiblerounding(Heur):
         return ips_model, ips_vars
 
     def get_best_sol(self, sol_dict, val_dict):
+        best_sol = {}
         if not sol_dict:
-            return {}
-        if self.model.getObjectiveSense() == 'minimize':
+            pass
+        elif self.model.getObjectiveSense() == 'minimize':
             best_sol = sol_dict[min(val_dict, key=val_dict.get)]
         elif self.model.getObjectiveSense() == 'maximize':
             best_sol = sol_dict[max(val_dict, key=val_dict.get)]
         else:
             logging.warning('Unknown objective sense. Expected \'minimize\'or \' maximize \' ')
         return best_sol
+
+
+# static methods
+
+def get_switching_points(int_sol1, int_sol2):
+    switching_points = [0, 1]
+    for j in range(len(int_sol1)):
+        eta_j = int_sol2[j] - int_sol1[j]
+        if eta_j != 0:
+            lower = math.ceil(int_sol1[j] + min(0, eta_j) - 1 / 2)
+            upper = math.floor(int_sol1[j] + max(0, eta_j) - 1 / 2)
+            for l in range(lower, upper + 1):
+                switching_points.append((1 / 2 - int_sol1[j] + l) / eta_j)
+    logging.info("Computed %i switching points" % len(switching_points))
+    return sorted(set(switching_points))
