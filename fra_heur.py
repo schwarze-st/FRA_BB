@@ -1,13 +1,8 @@
-import math
-import logging
-import pickle
-import numpy as np
-
+import math, random, numpy as np, logging, pickle
 from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_LPSOLSTAT, quicksum
 from time import time
 
 FEAS_TOL = 1E-6
-
 
 #
 # heuristic: feasible rounding approach
@@ -15,7 +10,7 @@ FEAS_TOL = 1E-6
 
 class feasiblerounding(Heur):
 
-    def __init__(self, options={}):
+    def __init__(self, options=None):
         """
         Construct the feasible rounding heuristic.
         Encoded in options (i.e. options['mode'] etc.):
@@ -25,6 +20,8 @@ class feasiblerounding(Heur):
         :return: returns nothing
         """
 
+        if options is None:
+            options = {}
         self.options = {'mode': 'original', 'delta': 0.999, 'line_search': False, 'diving': True}
         for key in options:
             self.options[key] = options[key]
@@ -46,7 +43,6 @@ class feasiblerounding(Heur):
         """
 
         self.start_run_statistics()
-
         sol_dict = {}
         val_dict = {}
 
@@ -75,12 +71,10 @@ class feasiblerounding(Heur):
             return {"result": SCIP_RESULT.DIDNOTRUN}
 
         logging.info(">>>> Optimize over EIPS")
-        print(">>>> Optimize starting")
         timer_ips = time()
         ips_model.hideOutput(True)
         ips_model.optimize()
         self.run_statistics['time_solveips'] = time() - timer_ips
-        print(">>>> Optimize done")
         logging.info("Model status is:" + str(ips_model.getStatus()))
 
         if ips_model.getStatus() == 'optimal':
@@ -90,43 +84,8 @@ class feasiblerounding(Heur):
 
             if self.diving:
                 print('>>>> Start Diving')
-                sol_diving = {}
-                obj_diving = math.inf
-                start_d = time()
-                self.computeB()
-                candidates, greedy = self.get_diving_candidates_3(sol_root)
-                print('>>>> candidate search took', str(time() - start_d), ' seconds')
-                self.model.startProbing()
-                dive_itr = 1
-                while greedy and dive_itr <= 30:
-                    print('>>>> Diving Round ', str(dive_itr))
-                    self.model.fixVarProbing(greedy[0],greedy[1])
-                    cutoff, numberofreductions = self.model.propagateProbing(-1)
-                    if cutoff:
-                        logging.warning("Diving-LP not feasible anymore")
-                    print('>>>> Propagation yielded {} domain reduction(s)'.format(numberofreductions))
-                    ips_model_p, ips_vars_p = self.build_ips()
-                    ips_model_p.hideOutput(True)
-                    ips_model_p.optimize()
-
-                    sol_diving_new = self.get_sol_submodel(ips_vars_p, ips_model_p)
-                    self.round_sol(sol_diving_new)
-                    sol_diving_new = self.fix_and_optimize(sol_diving_new)
-                    obj_diving_new = self.get_obj_value(sol_diving_new)
-                    if (not sol_diving) or obj_diving_new < obj_diving:
-                        print('>>>> Diving yielded better objective: ', obj_diving_new)
-                        sol_diving = sol_diving_new
-                        obj_diving = obj_diving_new
-
-                    start_d = time()
-                    candidates, greedy = self.get_diving_candidates_3(sol_diving_new)
-                    print('>>>> candidate search took ',str(time()-start_d),' seconds')
-                    dive_itr = dive_itr + 1
-                    ips_model_p.freeProb()
-                    del ips_model_p
-                    del ips_vars_p
-                self.model.endProbing()
-                print('>>>> End Diving')
+                diving_mode = 'impact'
+                obj_diving, sol_diving = self.diving_procedure(diving_mode, sol_root)
                 sol_dict['diving'] = sol_diving
                 val_dict['diving'] = obj_diving
 
@@ -147,15 +106,16 @@ class feasiblerounding(Heur):
         del ips_model
         del ips_vars
 
-        print(val_dict)
+        logging.info(val_dict)
         sol_best = self.get_best_sol(sol_dict, val_dict)
 
         if sol_best:
             sol_model = self.model.getBestSol()
             solution_accepted = self.sol_is_accepted(sol_best)
-            self.run_statistics['obj_FRA'] = val_dict[min(val_dict, key=val_dict.get)]
+            self.run_statistics['obj_best'] = val_dict[min(val_dict, key=val_dict.get)]
+            self.run_statistics['obj_root'] = val_dict[self.mode]
             if self.line_search:
-                self.run_statistics['impr_PP'] = val_dict[self.mode] - val_dict[self.mode + '_ls']
+                self.run_statistics['obj_ls'] = val_dict[self.mode + '_ls']
             self.run_statistics['obj_SCIP'] = self.model.getSolObjVal(sol_model, original=False)
 
             if solution_accepted:
@@ -173,8 +133,9 @@ class feasiblerounding(Heur):
         self.run_statistics = {}
         self.run_statistics = {'name': self.model.getProbName(), 'depth': self.model.getDepth(), 'eq_constrs': False,
                                'pruned_prob': False, 'ips_nonempty': False, 'feasible': False,
-                               'accepted': False, 'obj_FRA': None, 'impr_PP': None, 'obj_SCIP': None,
-                               'time_heur': None, 'time_solveips': None, 'time_pp': None, 'time_scip': None}
+                               'accepted': False, 'obj_best': None, 'obj_ls': None, 'obj_root':None, 'obj_SCIP': None,
+                               'time_heur': None, 'time_solveips': None, 'time_pp': None, 'time_scip': None,
+                               'diving_depth': None, 'diving_best_depth': None, 'obj_diving': None}
         self.ips_proven_empty = False
         self.timer_start = time()
 
@@ -183,57 +144,73 @@ class feasiblerounding(Heur):
             self.run_statistics['time_heur'] = time() - self.timer_start
         self.run_statistics['time_scip'] = self.model.getTotalTime()
         self.statistics.append(self.run_statistics)
-        print('>>>> Run completed')
 
-    def get_diving_candidates(self, ips_sol):
-        candidates = []
-        greedy = None
-        best = -math.inf
+    def diving_procedure(self, diving_mode, sol_root):
+        start_d = time()
+        sol_diving = sol_diving_new = sol_root
+        obj_diving = math.inf
+        if diving_mode == 'impact':
+            self.computeB()
+        candidate = self.get_diving_candidates(sol_diving, diving_mode)
+        print('>>>> candidate search took', str(time() - start_d), ' seconds')
+        self.model.startProbing()
+        dive_itr = 1
+        while candidate:
+            print('>>>> Diving Round ', str(dive_itr))
+            to_fix = candidate.pop(0)
+            self.model.fixVarProbing(to_fix, round(sol_diving_new[to_fix.name]))
+            cutoff, numberofreductions = self.model.propagateProbing(-1)
+            if cutoff:
+                logging.warning("Diving-LP not feasible anymore")
+            print('>>>> Propagation yielded {} domain reduction(s)'.format(numberofreductions))
+            if (dive_itr%5 == 0) or (not candidate) or (numberofreductions>0):
+                ips_model_p, ips_vars_p = self.build_ips()
+                ips_model_p.hideOutput(True)
+                ips_model_p.optimize()
+
+                sol_diving_new = self.get_sol_submodel(ips_vars_p, ips_model_p)
+                self.round_sol(sol_diving_new)
+                sol_diving_new = self.fix_and_optimize(sol_diving_new)
+                obj_diving_new = self.get_obj_value(sol_diving_new)
+                if (not sol_diving) or obj_diving_new < obj_diving:
+                    print('>>>> Diving yielded better objective: ', obj_diving_new)
+                    self.run_statistics['best_depth'] = dive_itr
+                    sol_diving = sol_diving_new
+                    obj_diving = obj_diving_new
+
+                start_d = time()
+
+                candidate = self.get_diving_candidates(sol_diving_new, diving_mode)
+                print('>>>> candidate search took ', str(time() - start_d), ' seconds')
+                ips_model_p.freeProb()
+                del ips_model_p
+                del ips_vars_p
+            dive_itr = dive_itr + 1
+        self.model.endProbing()
+        print('>>>> End Diving')
+        self.run_statistics['obj_diving'] = obj_diving
+        self.run_statistics['diving_depth'] = dive_itr - 1
+        return sol_diving, obj_diving
+
+    def get_diving_candidates(self, ips_sol, diving_mode):
+        if diving_mode=='impact':
+            candidates = self.get_impact_candidates(ips_sol)
+        elif diving_mode=='simple':
+            candidates = self.get_random_candidates(ips_sol)
+        else:
+            candidates = None
+
+        return candidates
+
+    def get_random_candidates(self, ips_sol):
         original_vars = self.model.getVars(transformed=True)
-        for v in original_vars:
-            if (v.vtype() != 'CONTINUOUS') and (v.getLbLocal() != v.getUbLocal()):
-                candidates.append(v.name)
-                fix_value = round(ips_sol[v.name])
-                obj = v.getObj()
-                if fix_value <= 0 and obj >= 0:
-                    if obj > best:
-                        greedy = (v, fix_value, obj)
-                        best = obj
-                else:
-                    if abs(obj) > best:
-                        greedy = (v, fix_value, obj)
-                        best = abs(obj)
-
-        return candidates, greedy
-
-    def get_diving_candidates_2(self, ips_sol):
-        start_calc = time()
-        original_vars = self.model.getVars(transformed=True)
-        linear_rows = self.model.getLPRowsData()
-        greedy = None
         variables = {v.name: v for v in original_vars if self.int_and_not_fixed(v)}
-        measure = {v.name: 0 for v in original_vars if self.int_and_not_fixed(v)}
-        fix_values = {v.name: round(ips_sol[v.name]) for v in original_vars if self.int_and_not_fixed(v)}
-        for row in linear_rows:
-            row_vars = []
-            row_vars_vals = []
-            cols = row.getCols()
-            vals = row.getVals()
-            for i in range(len(cols)):
-                if self.int_and_not_fixed(cols[i].getVar()):
-                    row_vars.append(cols[i].getVar().name)
-                    row_vars_vals.append(vals[i])
-            normit = np.linalg.norm(row_vars_vals)
-            for i,var in enumerate(row_vars):
-                bij = row_vars_vals[i]
-                measure[var] = measure[var] + (bij*(ips_sol[var]-fix_values[var]) + 0.5*abs(bij)) / normit
-        if measure:
-            name = max(measure, key=measure.get)
-            greedy = (variables[name], fix_values[name])
-        print('>>>> It took: ', str(time() - start_calc))
-        return [], greedy
+        cand = random.shuffle(list(variables.values()))
 
-    def get_diving_candidates_3(self, ips_sol):
+        return cand
+
+
+    def get_impact_candidates(self, ips_sol):
         original_vars = self.model.getVars(transformed=True)
         variables = {v.name: v for v in original_vars if self.int_and_not_fixed(v)}
 
@@ -249,15 +226,13 @@ class feasiblerounding(Heur):
 
         measure = np.sum(self.B@E, axis=0) + np.sum(B_abs, axis=0)
         if np.amax(measure) > 0:
-            ind_greedy = int(np.argmax(measure))
-            greedy_name = list(self.B_index_dict)[ind_greedy]
-            v = variables[greedy_name]
-            val = round(ips_sol[greedy_name])
-            greedy = (v,val)
+            with_index = [(measure[i],i) for i in range(len(measure))]
+            with_index.sort(key=lambda tup: tup[0])
+            candidates = [variables[list(self.B_index_dict)[i]] for m,i in with_index if m>0]
         else:
-            greedy = []
+            candidates = []
 
-        return [], greedy
+        return candidates
 
     def computeB(self):
         original_vars = self.model.getVars(transformed=True)
@@ -425,10 +400,10 @@ class feasiblerounding(Heur):
         return 0
 
     def heurinitsol(self):
-        print(">>>> Call heurinitsol()")
+        logging.info(">>>> Call heurinitsol()")
 
     def heurexitsol(self):
-        print(">>>> Call heurexitsol()")
+        logging.info(">>>> Call heurexitsol()")
         with open('temp_results.pickle', 'ab') as handle:
             pickle.dump(self.statistics, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
