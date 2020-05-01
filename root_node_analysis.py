@@ -4,7 +4,7 @@ import logging
 from datetime import *
 import os
 
-globalpath_name = '/home/stefan/Dokumente/opt_problems/'
+globalpath_name = ''
 folder_name = 'collection'
 
 logging.basicConfig(level=logging.INFO, filename='results/root_node_analysis_log_'+folder_name)
@@ -13,14 +13,81 @@ dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
 logging.info('>>>>>>>>>>>>>>>> Running testbed ' + folder_name + " "+ dt_string + "<<<<<<<<<<<<<<<<<<<")
 
 #testbed = read_all_test_instances(globalpath_name+folder_name)
-testbed = ['set3-09', 'supportcase20', 'set3-20', 'iis-hc-cov', 'sp150x300d', 'b1c1s1', 'mik-250-20-75-3', 'neos-1445743', 'n13-3', 'khb05250', 'mik-250-20-75-5', 'gen-ip021', 'opm2-z6-s1', 'seymour', 'beasleyC2', 'gsvm2rl3', 'ger50-17-trans-dfn-3t', 'beasleyC3', 'mik-250-20-75-2', 'neos-4954672-berkel', 'k16x240b', 'neos-3118745-obra', 'mc11', 'ger50-17-ptp-pop-6t', 'ger50-17-trans-pop-3t', 'markshare2', 'neos-3611689-kaihu', 'set3-10', 'mc7', 'n6-3', 'gen-ip054', 'ns4-pr6', 'bg512142', 'ger50-17-ptp-pop-3t', 'neos-1445765', 'gen-ip002']
+testbed = ['set3-09', 'set3-20', 'buildingenergy', 'set3-10',
+ 'neos-1367061',
+ 'bg512142',
+ 'gsvm2rl9',
+ 'stein9inf',
+ 'gsvm2rl12',
+ 'seymour1',
+ 'set3-16',
+ 'p2m2p1m1p0n100',
+ 'mushroom-best',
+ 'gsvm2rl11',
+ 'neos-1112787',
+ 'dg012142',
+ 'neos-787933',
+ 'supportcase20',
+ 'ns4-pr6',
+ 'manna81',
+ 'app2-1',
+ 'gr4x6',
+ 'haprp',
+ '30_70_45_095_100',
+ 'markshare_5_0',
+ 'iis-hc-cov',
+ 'b1c1s1',
+ 'n13-3',
+ 'khb05250',
+ 'gen-ip021',
+ 'seymour',
+ 'gsvm2rl3',
+ 'bmocbd3',
+ 'neos-3118745-obra',
+ 'ger50-17-ptp-pop-6t',
+ 'markshare2',
+ 'neos-3611689-kaihu',
+ 'gen-ip054',
+ 'adult-regularized',
+ 'ger50-17-ptp-pop-3t',
+ 'gen-ip002',
+ 'neos-3611447-jijia',
+ 'p500x2988',
+ 'b2c1s1',
+ 'iis-glass-cov',
+ 'breastcancer-regularized',
+ 'app2-2',
+ 'g200x740',
+ 'scpj4scip',
+ 'n7-3',
+ 'supportcase39',
+ 'v150d30-2hopcds',
+ 'stockholm',
+ 'a1c1s1',
+ 'n9-3',
+ 'ran12x21',
+ 'neos-848198',
+ 'neos-3610051-istra',
+ 'scpk4',
+ 'scpm1',
+ 'stein45inf',
+ 'qiu',
+ 'gsvm2rl5',
+ 'markshare1',
+ 'neos5',
+ 'scpl4',
+ 'germany50-UUM',
+ 'stein15inf',
+ 'supportcase42',
+ 'gen-ip036',
+ 'npmv07']
 print('Testing %i problems'%len(testbed))
 error_probs = []
 
 for idx, model_name in enumerate(testbed):
-    logging.info('testing problem ' + model_name)
-    print('Testing model %s'%model_name)
-    path_name = globalpath_name + '/' + folder_name+'/'+ model_name+'.mps'
+    logging.info('Testing model ' + model_name)
+    print('Testing problem ' + str(idx+1) + ' of ' + str(len(testbed)))
+    path_name = folder_name+'/'+ model_name+'.mps'
     try:
         test_heur(path_name, model_name)
     except:

@@ -1,6 +1,8 @@
-import math, random, numpy as np, logging, pickle
+import math, random, numpy as np, logging, pickle, scipy as sp
 from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_LPSOLSTAT, quicksum
 from time import time
+from scipy.sparse import dok_matrix, linalg
+
 
 FEAS_TOL = 1E-6
 
@@ -83,11 +85,11 @@ class feasiblerounding(Heur):
             sol_root = self.get_sol_submodel(ips_vars, ips_model)
 
             if self.diving:
-                print('>>>> Start Diving')
                 diving_mode = 'impact'
                 obj_diving, sol_diving = self.diving_procedure(diving_mode, sol_root)
                 sol_dict['diving'] = sol_diving
                 val_dict['diving'] = obj_diving
+
 
             if self.line_search:
                 timer_pp = time()
@@ -146,23 +148,20 @@ class feasiblerounding(Heur):
         self.statistics.append(self.run_statistics)
 
     def diving_procedure(self, diving_mode, sol_root):
-        start_d = time()
         sol_diving = sol_diving_new = sol_root
         obj_diving = math.inf
         if diving_mode == 'impact':
             self.computeB()
         candidate = self.get_diving_candidates(sol_diving, diving_mode)
-        print('>>>> candidate search took', str(time() - start_d), ' seconds')
         self.model.startProbing()
+        logging.info('>>>> Start Diving')
         dive_itr = 1
         while candidate:
-            print('>>>> Diving Round ', str(dive_itr))
             to_fix = candidate.pop(0)
             self.model.fixVarProbing(to_fix, round(sol_diving_new[to_fix.name]))
             cutoff, numberofreductions = self.model.propagateProbing(-1)
             if cutoff:
                 logging.warning("Diving-LP not feasible anymore")
-            print('>>>> Propagation yielded {} domain reduction(s)'.format(numberofreductions))
             if (dive_itr%5 == 0) or (not candidate) or (numberofreductions>0):
                 ips_model_p, ips_vars_p = self.build_ips()
                 ips_model_p.hideOutput(True)
@@ -173,24 +172,20 @@ class feasiblerounding(Heur):
                 sol_diving_new = self.fix_and_optimize(sol_diving_new)
                 obj_diving_new = self.get_obj_value(sol_diving_new)
                 if (not sol_diving) or obj_diving_new < obj_diving:
-                    print('>>>> Diving yielded better objective: ', obj_diving_new)
-                    self.run_statistics['best_depth'] = dive_itr
+                    logging.info('>>>> Diving yielded better objective: ' + str(obj_diving_new) + ' in Depth ' + str(dive_itr-1))
+                    self.run_statistics['diving_best_depth'] = dive_itr
                     sol_diving = sol_diving_new
                     obj_diving = obj_diving_new
-
-                start_d = time()
-
                 candidate = self.get_diving_candidates(sol_diving_new, diving_mode)
-                print('>>>> candidate search took ', str(time() - start_d), ' seconds')
                 ips_model_p.freeProb()
                 del ips_model_p
                 del ips_vars_p
             dive_itr = dive_itr + 1
         self.model.endProbing()
-        print('>>>> End Diving')
+        logging.info('>>>> End Diving')
         self.run_statistics['obj_diving'] = obj_diving
         self.run_statistics['diving_depth'] = dive_itr - 1
-        return sol_diving, obj_diving
+        return obj_diving, sol_diving
 
     def get_diving_candidates(self, ips_sol, diving_mode):
         if diving_mode=='impact':
@@ -243,7 +238,7 @@ class feasiblerounding(Heur):
             if v.vtype() != 'CONTINUOUS':
                 B_index_dict[v.name] = index
                 index += 1
-        B = np.zeros([len(linear_rows),index])
+        B = dok_matrix((len(linear_rows),index))
         for i,row in enumerate(linear_rows):
             cols = row.getCols()
             vals = row.getVals()
@@ -251,7 +246,8 @@ class feasiblerounding(Heur):
                 v = col.getVar()
                 if v.vtype() != 'CONTINUOUS':
                     B[i,B_index_dict[v.name]] = vals[j]
-        norm_b = np.linalg.norm(B, axis=1)
+
+        norm_b = linalg.norm(B, axis=1)
         norm_b[norm_b == 0] = 1
         self.B = np.diag(1 / norm_b) @ B
         self.B_index_dict = B_index_dict
