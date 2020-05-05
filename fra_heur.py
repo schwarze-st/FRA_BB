@@ -210,23 +210,24 @@ class feasiblerounding(Heur):
         variables = {v.name: v for v in original_vars if self.int_and_not_fixed(v)}
 
         n = len(self.B_index_dict)
-        B_abs = np.zeros(self.B.shape)
-        E = np.zeros([n,n])
+        E = dok_matrix((n,n))
         for v in variables:
             y = ips_sol[v]
             y_check = round(ips_sol[v])
             ind = self.B_index_dict[v]
             E[ind,ind] = (y-y_check)
-            B_abs[:,ind] = np.abs(self.B[:,ind])
 
-        measure = np.sum(self.B@E, axis=0) + np.sum(B_abs, axis=0)
+        E = E.tocsc()
+        m1 = np.sum((self.B).dot(E), axis=0)
+        m2 = np.sum(self.Babs, axis=0)
+        measure = m1+m2
         if np.amax(measure) > 0:
             with_index = [(measure[i],i) for i in range(len(measure))]
             with_index.sort(key=lambda tup: tup[0])
             candidates = [variables[list(self.B_index_dict)[i]] for m,i in with_index if m>0]
         else:
             candidates = []
-
+        print('Completed "get impact candidates"')
         return candidates
 
     def computeB(self):
@@ -239,6 +240,7 @@ class feasiblerounding(Heur):
                 B_index_dict[v.name] = index
                 index += 1
         B = dok_matrix((len(linear_rows),index))
+        Babs = dok_matrix((len(linear_rows),index))
         for i,row in enumerate(linear_rows):
             cols = row.getCols()
             vals = row.getVals()
@@ -246,11 +248,16 @@ class feasiblerounding(Heur):
                 v = col.getVar()
                 if v.vtype() != 'CONTINUOUS':
                     B[i,B_index_dict[v.name]] = vals[j]
+                    Babs[i,B_index_dict[v.name]] = abs(vals[j])
 
+        B = B.tocsc()
+        Babs = Babs.tocsc()
         norm_b = linalg.norm(B, axis=1)
         norm_b[norm_b == 0] = 1
-        self.B = np.diag(1 / norm_b) @ B
+        self.B =  (B.transpose()).dot(np.diag(1 / norm_b))
+        self.Babs = (Babs.transpose()).dot(np.diag(1 / norm_b))
         self.B_index_dict = B_index_dict
+        print('completed computation of B')
 
     def int_and_not_fixed(self, v):
         return (v.vtype() != 'CONTINUOUS') and (v.getLbLocal() != v.getUbLocal())
