@@ -1,7 +1,7 @@
 import math, random, numpy as np, logging, pickle, scipy as sp
 from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_LPSOLSTAT, quicksum
 from time import time
-from scipy.sparse import dok_matrix, linalg
+from scipy.sparse import dok_matrix, linalg, diags, issparse
 
 
 FEAS_TOL = 1E-6
@@ -24,7 +24,7 @@ class feasiblerounding(Heur):
 
         if options is None:
             options = {}
-        self.options = {'mode': 'original', 'delta': 0.999, 'line_search': False, 'diving': True}
+        self.options = {'mode': 'original', 'delta': 0.999, 'line_search': True, 'diving': True}
         for key in options:
             self.options[key] = options[key]
 
@@ -87,13 +87,18 @@ class feasiblerounding(Heur):
             if self.diving:
                 diving_mode = 'impact'
                 obj_diving, sol_diving = self.diving_procedure(diving_mode, sol_root)
-                sol_dict['diving'] = sol_diving
-                val_dict['diving'] = obj_diving
+                sol_dict['diving'] = self.fix_and_optimize(sol_diving)
+                val_dict['diving'] = self.get_obj_value(sol_dict['diving'])
 
 
             if self.line_search:
                 timer_pp = time()
                 rel_sol_dict = self.get_sol_relaxation()
+                if self.diving:
+                    line_search_sol = self.get_line_search_rounding(rel_sol_dict, sol_diving)
+                    label_sol = 'diving' + '_ls'
+                    sol_dict[label_sol] = self.fix_and_optimize(line_search_sol)
+                    val_dict[label_sol] = self.get_obj_value(sol_dict[label_sol])
                 line_search_sol = self.get_line_search_rounding(rel_sol_dict, sol_root)
                 label_sol = self.mode + '_ls'
                 sol_dict[label_sol] = self.fix_and_optimize(line_search_sol)
@@ -118,6 +123,8 @@ class feasiblerounding(Heur):
             self.run_statistics['obj_root'] = val_dict[self.mode]
             if self.line_search:
                 self.run_statistics['obj_ls'] = val_dict[self.mode + '_ls']
+                if self.diving:
+                    self.run_statistics['obj_diving_ls'] = val_dict['diving_ls']
             self.run_statistics['obj_SCIP'] = self.model.getSolObjVal(sol_model, original=False)
 
             if solution_accepted:
@@ -137,7 +144,7 @@ class feasiblerounding(Heur):
                                'pruned_prob': False, 'ips_nonempty': False, 'feasible': False,
                                'accepted': False, 'obj_best': None, 'obj_ls': None, 'obj_root':None, 'obj_SCIP': None,
                                'time_heur': None, 'time_solveips': None, 'time_pp': None, 'time_scip': None,
-                               'diving_depth': None, 'diving_best_depth': None, 'obj_diving': None}
+                               'diving_depth': None, 'diving_best_depth': None, 'obj_diving': None, 'obj_diving_ls': None}
         self.ips_proven_empty = False
         self.timer_start = time()
 
@@ -157,7 +164,7 @@ class feasiblerounding(Heur):
         logging.info('>>>> Start Diving')
         dive_itr = 1
         while candidate:
-            to_fix = candidate.pop(0)
+            to_fix = candidate.pop(-1)
             self.model.fixVarProbing(to_fix, round(sol_diving_new[to_fix.name]))
             cutoff, numberofreductions = self.model.propagateProbing(-1)
             if cutoff:
@@ -208,26 +215,29 @@ class feasiblerounding(Heur):
     def get_impact_candidates(self, ips_sol):
         original_vars = self.model.getVars(transformed=True)
         variables = {v.name: v for v in original_vars if self.int_and_not_fixed(v)}
-
         n = len(self.B_index_dict)
         E = dok_matrix((n,n))
+        E2 = dok_matrix((n,n))
         for v in variables:
             y = ips_sol[v]
             y_check = round(ips_sol[v])
             ind = self.B_index_dict[v]
             E[ind,ind] = (y-y_check)
-
+            E2[ind,ind] = 1
         E = E.tocsc()
+        E2 = E2.tocsc()
         m1 = np.sum((self.B).dot(E), axis=0)
-        m2 = np.sum(self.Babs, axis=0)
-        measure = m1+m2
+        m2 = np.sum((self.Babs).dot(E2), axis=0)
+        measure = (m1+m2).flatten()
+        candidates = []
         if np.amax(measure) > 0:
-            with_index = [(measure[i],i) for i in range(len(measure))]
+            with_index = [(measure[0,i],i) for i in range(measure.shape[1])]
             with_index.sort(key=lambda tup: tup[0])
-            candidates = [variables[list(self.B_index_dict)[i]] for m,i in with_index if m>0]
-        else:
-            candidates = []
-        print('Completed "get impact candidates"')
+            assert with_index[0][0] <= with_index[-1][0]
+            for (m,i) in with_index:
+                assert m >= 0
+                if m>0:
+                    candidates.append(variables[list(self.B_index_dict)[i]])
         return candidates
 
     def computeB(self):
@@ -254,10 +264,12 @@ class feasiblerounding(Heur):
         Babs = Babs.tocsc()
         norm_b = linalg.norm(B, axis=1)
         norm_b[norm_b == 0] = 1
-        self.B =  (B.transpose()).dot(np.diag(1 / norm_b))
-        self.Babs = (Babs.transpose()).dot(np.diag(1 / norm_b))
+        diagonal_b = diags(1/norm_b,0)
+        self.B =  diagonal_b.dot(B)
+        self.Babs = diagonal_b.dot(Babs)
         self.B_index_dict = B_index_dict
-        print('completed computation of B')
+        assert issparse(self.B)
+        assert issparse(self.Babs)
 
     def int_and_not_fixed(self, v):
         return (v.vtype() != 'CONTINUOUS') and (v.getLbLocal() != v.getUbLocal())
