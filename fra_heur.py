@@ -85,7 +85,7 @@ class feasiblerounding(Heur):
             sol_root = self.get_sol_submodel(ips_vars, ips_model)
 
             if self.diving:
-                diving_mode = 'impact'
+                diving_mode = 'simple'
                 obj_diving, sol_diving = self.diving_procedure(diving_mode, sol_root)
                 sol_dict['diving'] = self.fix_and_optimize(sol_diving)
                 val_dict['diving'] = self.get_obj_value(sol_dict['diving'])
@@ -94,11 +94,6 @@ class feasiblerounding(Heur):
             if self.line_search:
                 timer_pp = time()
                 rel_sol_dict = self.get_sol_relaxation()
-                if self.diving:
-                    line_search_sol = self.get_line_search_rounding(rel_sol_dict, sol_diving)
-                    label_sol = 'diving' + '_ls'
-                    sol_dict[label_sol] = self.fix_and_optimize(line_search_sol)
-                    val_dict[label_sol] = self.get_obj_value(sol_dict[label_sol])
                 line_search_sol = self.get_line_search_rounding(rel_sol_dict, sol_root)
                 label_sol = self.mode + '_ls'
                 sol_dict[label_sol] = self.fix_and_optimize(line_search_sol)
@@ -164,6 +159,8 @@ class feasiblerounding(Heur):
         logging.info('>>>> Start Diving')
         dive_itr = 1
         while candidate:
+            if (time() - self.timer_start)>3600:
+                break
             to_fix = candidate.pop(-1)
             self.model.fixVarProbing(to_fix, round(sol_diving_new[to_fix.name]))
             cutoff, numberofreductions = self.model.propagateProbing(-1)
