@@ -12,6 +12,7 @@ now = datetime.now()
 dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
 logging.info('>>>>>>>>>>>>>>>> Running testbed ' + folder_name + " "+ dt_string + "<<<<<<<<<<<<<<<<<<<")
 testbed = read_all_test_instances(folder_name)
+testbed = testbed[1008:]
 print('Testing %i problems'%len(testbed))
 error_probs = []
 
