@@ -13,7 +13,10 @@ dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
 logging.info('>>>>>>>>>>>>>>>> Running testbed ' + folder_name + " "+ dt_string + "<<<<<<<<<<<<<<<<<<<")
 
 #testbed = read_all_test_instances(globalpath_name+folder_name)
-testbed = ['set3-09', 'set3-20', 'buildingenergy', 'set3-10',
+testbed = ['set3-09',
+ 'set3-20',
+# 'buildingenergy',
+ 'set3-10',
  'neos-1367061',
  'bg512142',
  'gsvm2rl9',
@@ -42,7 +45,7 @@ testbed = ['set3-09', 'set3-20', 'buildingenergy', 'set3-10',
  'gen-ip021',
  'seymour',
  'gsvm2rl3',
- 'bmocbd3',
+ #'bmocbd3',
  'neos-3118745-obra',
  'ger50-17-ptp-pop-6t',
  'markshare2',
@@ -86,6 +89,7 @@ error_probs = []
 
 for idx, model_name in enumerate(testbed):
     logging.info('Testing model ' + model_name)
+    print('Testing model ' + model_name)
     print('Testing problem ' + str(idx+1) + ' of ' + str(len(testbed)))
     path_name = folder_name+'/'+ model_name+'.mps'
     try:
@@ -93,8 +97,6 @@ for idx, model_name in enumerate(testbed):
     except:
         print('unexpected error occurred')
         error_probs.append(model_name[:-4])
-    if idx > 4:
-        break
 os.rename('temp_results.pickle','results/FRA_Scip.pickle')
 convert_dict_to_dataframe()
 print('Problems with errors:',error_probs)

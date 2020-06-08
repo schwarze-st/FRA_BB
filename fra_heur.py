@@ -85,7 +85,7 @@ class feasiblerounding(Heur):
             sol_root = self.get_sol_submodel(ips_vars, ips_model)
 
             if self.diving:
-                diving_mode = 'impact'
+                diving_mode = 'simple'
                 obj_diving, sol_diving = self.diving_procedure(diving_mode, sol_root)
                 sol_dict['diving'] = self.fix_and_optimize(sol_diving)
                 val_dict['diving'] = self.get_obj_value(sol_dict['diving'])
@@ -94,11 +94,6 @@ class feasiblerounding(Heur):
             if self.line_search:
                 timer_pp = time()
                 rel_sol_dict = self.get_sol_relaxation()
-                if self.diving:
-                    line_search_sol = self.get_line_search_rounding(rel_sol_dict, sol_diving)
-                    label_sol = 'diving' + '_ls'
-                    sol_dict[label_sol] = self.fix_and_optimize(line_search_sol)
-                    val_dict[label_sol] = self.get_obj_value(sol_dict[label_sol])
                 line_search_sol = self.get_line_search_rounding(rel_sol_dict, sol_root)
                 label_sol = self.mode + '_ls'
                 sol_dict[label_sol] = self.fix_and_optimize(line_search_sol)
@@ -123,8 +118,6 @@ class feasiblerounding(Heur):
             self.run_statistics['obj_root'] = val_dict[self.mode]
             if self.line_search:
                 self.run_statistics['obj_ls'] = val_dict[self.mode + '_ls']
-                if self.diving:
-                    self.run_statistics['obj_diving_ls'] = val_dict['diving_ls']
             self.run_statistics['obj_SCIP'] = self.model.getSolObjVal(sol_model, original=False)
 
             if solution_accepted:
@@ -160,10 +153,13 @@ class feasiblerounding(Heur):
         if diving_mode == 'impact':
             self.computeB()
         candidate = self.get_diving_candidates(sol_diving, diving_mode)
+        logging.info("Computed %i diving candidates" % len(candidate))
         self.model.startProbing()
         logging.info('>>>> Start Diving')
         dive_itr = 1
         while candidate:
+            if (time() - self.timer_start)>3600:
+                break
             to_fix = candidate.pop(-1)
             self.model.fixVarProbing(to_fix, round(sol_diving_new[to_fix.name]))
             cutoff, numberofreductions = self.model.propagateProbing(-1)
@@ -205,12 +201,15 @@ class feasiblerounding(Heur):
         return candidates
 
     def get_random_candidates(self, ips_sol):
+        logging.info('Start random candidate selection')
         original_vars = self.model.getVars(transformed=True)
-        variables = {v.name: v for v in original_vars if self.int_and_not_fixed(v)}
-        cand = random.shuffle(list(variables.values()))
-
-        return cand
-
+        variables = {v.name: v for v in original_vars if (self.int_and_not_fixed(v))}
+        clist = list(variables.values())
+        random.shuffle(clist)
+        if clist:
+            return clist
+        else:
+            return []
 
     def get_impact_candidates(self, ips_sol):
         original_vars = self.model.getVars(transformed=True)
@@ -287,7 +286,6 @@ class feasiblerounding(Heur):
         rel_int_sol = self.get_value_list_of_int_vars(rel_sol_dict)
         ips_int_sol = self.get_value_list_of_int_vars(ips_sol_dict)
         switching_points = get_switching_points(rel_int_sol, ips_int_sol)
-        logging.info(switching_points)
         feasible = False
         i = 0
         while (not feasible) and (i < len(switching_points)):
