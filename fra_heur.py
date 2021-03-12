@@ -85,7 +85,7 @@ class feasiblerounding(Heur):
             sol_root = self.get_sol_submodel(ips_vars, ips_model)
 
             if self.diving:
-                diving_mode = 'impact'
+                diving_mode = 'simple'
                 obj_diving, sol_diving = self.diving_procedure(diving_mode, sol_root)
                 sol_dict['diving'] = self.fix_and_optimize(sol_diving)
                 val_dict['diving'] = self.get_obj_value(sol_dict['diving'])
@@ -159,7 +159,7 @@ class feasiblerounding(Heur):
         if diving_mode == 'impact':
             self.computeB()
             runs = 1
-        elif diving_mode == 'random':
+        elif diving_mode == 'simple':
             runs = 10
         candidate = self.get_diving_candidates(sol_diving, diving_mode)
         logging.info("Computed %i diving candidates" % len(candidate))
