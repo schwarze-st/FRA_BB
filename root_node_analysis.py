@@ -8,7 +8,7 @@ globalpath_name = ''
 folder_name = 'collection'
 testbed_name = 'granularSCIPsmall'
 
-logging.basicConfig(level=logging.INFO, filename='results/root_node_analysis_log_'+folder_name)
+logging.basicConfig(level=logging.INFO, filename='results/test_paperversion'+folder_name)
 now = datetime.now()
 dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
 logging.info('>>>>>>>>>>>>>>>> Running testbed ' + testbed_name + " "+ dt_string + "<<<<<<<<<<<<<<<<<<<")
@@ -19,7 +19,7 @@ with open('testbed/'+testbed_name+'.txt', "r") as to_read:
 print('Testing %i problems'%len(testbed))
 error_probs = []
 
-for idx, model_name in enumerate(testbed):
+for idx, model_name in enumerate(testbed[6:9]):
     model_name = model_name[:-5]
     logging.info('Testing model ' + model_name)
     print('Testing model ' + model_name)

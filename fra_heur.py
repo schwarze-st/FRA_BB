@@ -46,6 +46,9 @@ class feasiblerounding(Heur):
         """
 
         self.start_run_statistics()
+        sol_model = self.model.getBestSol()
+        if sol_model:
+            self.run_statistics['obj_SCIP'] = self.model.getSolObjVal(sol_model, original=True)
         sol_dict = {}
         val_dict = {}
 
@@ -91,6 +94,9 @@ class feasiblerounding(Heur):
                 if self.run_statistics['sol_diving']:
                     sol_dict['diving'] = self.run_statistics['sol_diving'][np.argmin(self.run_statistics['obj_diving'])]
                     val_dict['diving'] = np.min(self.run_statistics['obj_diving'])
+                    logging.info('Check best diving solution')
+                    if not self.model.checkSol(self.create_sol(sol_dict['diving'])):
+                        logging.warning('Rounding obtained by diving is not feasible')
 
 
             if self.line_search:
@@ -119,13 +125,11 @@ class feasiblerounding(Heur):
         sol_best = self.get_best_sol(sol_dict, val_dict)
 
         if sol_best:
-            sol_model = self.model.getBestSol()
-            solution_accepted = self.sol_is_accepted(sol_best)
+            self.run_statistics['feasible'], solution_accepted = self.sol_is_accepted(sol_best)
             self.run_statistics['obj_best'] = val_dict[min(val_dict, key=val_dict.get)]
             self.run_statistics['obj_root'] = val_dict[self.mode]
             if self.line_search:
                 self.run_statistics['obj_ls'] = val_dict[self.mode + '_ls']
-            self.run_statistics['obj_SCIP'] = self.model.getSolObjVal(sol_model, original=False)
 
             if solution_accepted:
                 self.run_statistics['accepted'] = True
@@ -172,7 +176,7 @@ class feasiblerounding(Heur):
             run_it = run_it+1
             self.model.startProbing()
             logging.info('>>>> Start Diving ')
-            logging.info("Round %i" % run_it)
+            logging.info("________ Round %i _______" % run_it)
             candidate = self.get_diving_candidates(sol_diving, diving_mode, run_it)
             logging.info("Computed %i diving candidates" % len(candidate))
             fix_it = 0
@@ -193,19 +197,20 @@ class feasiblerounding(Heur):
                     ips_model_p.hideOutput(True)
                     t_0 = time()
                     ips_model_p.optimize() #TODO Hier wären ggf. Warmstarts möglich
-                    delta = time() - t_0
-                    t_div_1 = t_div_1 + delta
-                    t_div_2 = t_div_2 + delta
+                    diff = time() - t_0
+                    t_div_1 = t_div_1 + diff
+                    t_div_2 = t_div_2 + diff
                     t_div_3 = t_div_3 + ips_model_p.getSolvingTime()
 
                     sol_diving_new = self.get_sol_submodel(ips_vars_p, ips_model_p)
                     self.round_sol(sol_diving_new)
                     if not self.sol_satisfies_constrs(sol_diving_new):
+                        logging.info('Rounding infeasible: apply fix_and_optimize')
                         sol_diving_new, t_sol = self.fix_and_optimize(sol_diving_new)
                         t_div_1 = t_div_1 + t_sol
                         t_div_2 = t_div_2 + t_sol
                         t_div_3 = t_div_3 + t_sol
-                        obj_diving_new = self.get_obj_value(sol_diving_new)
+                    obj_diving_new = self.get_obj_value(sol_diving_new)
                     if (not sol_diving) or obj_diving_new < obj_diving:
                         logging.info('>>>> Diving yielded better objective: ' + str(obj_diving_new) + ' in Depth ' + str(fix_it))
                         depth_best = fix_it
@@ -217,9 +222,9 @@ class feasiblerounding(Heur):
             self.model.endProbing()
             self.run_statistics['sol_diving'].append(sol_diving)
             self.run_statistics['obj_diving'].append(obj_diving)
-            self.run_statistics['diving_depth'].append = fix_it
+            self.run_statistics['diving_depth'].append(fix_it)
             self.run_statistics['diving_best_depth'].append(depth_best)
-        logging.info('>>>> End Diving')
+        logging.info('>>>> End diving')
         self.run_statistics['diving_lp_solves'] = d_lp
         self.run_statistics['time_diving'] = [t_start-time(), t_div_1, t_div_2, t_div_3]
         return obj_diving, sol_diving
@@ -228,7 +233,7 @@ class feasiblerounding(Heur):
         if diving_mode == 'impact':
             candidates = self.get_impact_candidates(ips_sol)
         elif diving_mode == 'simple':
-            candidates = self.get_random_candidates(ips_sol, run_it)
+            candidates = self.get_random_candidates(run_it)
         else:
             candidates = None
 
@@ -380,9 +385,9 @@ class feasiblerounding(Heur):
         self.set_objective_sense(model)
         return var_dict
 
-    def get_obj_value(self, sol):
-        variables = self.model.getVars(transformed=True)
-        obj_val = sum([v.getObj() * sol[v.name] for v in variables])
+    def get_obj_value(self, sol_dict):
+        sol = self.create_sol(sol_dict)
+        obj_val = self.model.getSolObjVal(sol,True)
         return obj_val
 
     def enlargement_possible(self, vlist, clist):
@@ -504,22 +509,23 @@ class feasiblerounding(Heur):
         return rounding_feasible
 
     def sol_is_accepted(self, sol_dict):
-        original_vars = self.model.getVars(transformed=True)
-        sol = self.model.createSol()
-        for v in original_vars:
-            self.model.setSolVal(sol, v, sol_dict[v.name])
+        sol = self.create_sol(sol_dict)
 
         rounding_feasible = self.model.checkSol(sol)
         solution_accepted = self.model.trySol(sol)
 
         if rounding_feasible == 0:
-            logging.warning(">>>> ips feasible, but no feasible rounding")
+            logging.warning("Rounding is not feasible")
             logging.debug('Maximum violation of LP row: ' + str(self.get_lp_violation(sol)))
-        else:
-            self.run_statistics['feasible'] = True
         logging.info(">>>> accepted solution? %s" % ("yes" if solution_accepted == 1 else "no"))
+        return rounding_feasible, solution_accepted
 
-        return solution_accepted
+    def create_sol(self, sol_dict):
+        original_vars = self.model.getVars(transformed=True)
+        sol = self.model.createSol()
+        for v in original_vars:
+            self.model.setSolVal(sol, v, sol_dict[v.name])
+        return sol
 
     def fix_and_optimize(self, sol_fra):
         reduced_model = Model('reduced_model')
@@ -544,9 +550,13 @@ class feasiblerounding(Heur):
         if not sol_dict:
             pass
         elif self.model.getObjectiveSense() == 'minimize':
-            best_sol = sol_dict[min(val_dict, key=val_dict.get)]
+            label = min(val_dict, key=val_dict.get)
+            logging.info("Best solution is '%s'" % label)
+            best_sol = sol_dict[label]
         elif self.model.getObjectiveSense() == 'maximize':
-            best_sol = sol_dict[max(val_dict, key=val_dict.get)]
+            label = max(val_dict, key=val_dict.get)
+            logging.info("Best solution is '%s'" % label)
+            best_sol = sol_dict[label]
         else:
             logging.warning('Unknown objective sense. Expected \'minimize\'or \' maximize \' ')
         return best_sol
