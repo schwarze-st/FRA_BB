@@ -1,4 +1,4 @@
-import math, random, numpy as np, logging, pickle, scipy as sp
+import math, random, numpy as np, logging, pickle
 from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_LPSOLSTAT, quicksum
 from time import time
 from scipy.sparse import dok_matrix, linalg, diags, issparse
@@ -15,16 +15,17 @@ class feasiblerounding(Heur):
     def __init__(self, options=None):
         """
         Construct the feasible rounding heuristic.
-        Encoded in options (i.e. options['mode'] etc.):
-        :param mode: 'original' or 'deep_fixing'
-        :param delta: enlargement (0,1)
-        :param line_search: flag for postprocessing
+        Encoded in
+        :param options: (i.e. options['mode'] etc.):
+            mode: 'original' or 'deep_fixing'
+            delta: enlargement (0,1)
+            line_search: flag for postprocessing
         :return: returns nothing
         """
 
+        self.options = {'mode': 'original', 'delta': 0.999, 'line_search': True, 'diving': True}
         if options is None:
             options = {}
-        self.options = {'mode': 'original', 'delta': 0.999, 'line_search': True, 'diving': True}
         for key in options:
             self.options[key] = options[key]
 
@@ -87,16 +88,16 @@ class feasiblerounding(Heur):
             if self.diving:
                 diving_mode = 'simple'
                 self.diving_procedure(diving_mode, sol_root)
-                # TODO retrieve best diving - point from list
-                sol_dict['diving'] =
-                val_dict['diving'] = obj_diving
+                if self.run_statistics['sol_diving']:
+                    sol_dict['diving'] = self.run_statistics['sol_diving'][np.argmin(self.run_statistics['obj_diving'])]
+                    val_dict['diving'] = np.min(self.run_statistics['obj_diving'])
 
 
             if self.line_search:
                 timer_pp = time()
                 rel_sol_dict = self.get_sol_relaxation()
                 if self.diving:
-                    line_search_sol = self.get_line_search_rounding(rel_sol_dict, sol_diving)
+                    line_search_sol = self.get_line_search_rounding(rel_sol_dict, sol_dict['diving'])
                     label_sol = 'diving' + '_ls'
                     sol_dict[label_sol] = self.fix_and_optimize(line_search_sol)
                     val_dict[label_sol] = self.get_obj_value(sol_dict[label_sol])
@@ -142,8 +143,8 @@ class feasiblerounding(Heur):
         self.run_statistics = {'name': self.model.getProbName(), 'depth': self.model.getDepth(), 'eq_constrs': False,
                                'pruned_prob': False, 'ips_nonempty': False, 'feasible': False,
                                'accepted': False, 'obj_best': None, 'obj_ls': None, 'obj_root':None, 'obj_SCIP': None,
-                               'time_heur': None, 'time_solveips': None, 'time_pp': None, 'time_scip': None, 'diving_lp_solves':[],
-                               'diving_depth': [], 'diving_best_depth': [], 'obj_diving': []}
+                               'time_heur': None, 'time_solveips': None, 'time_pp': None, 'time_scip': None, 'time_d_solveips': None, 'diving_lp_solves':[],
+                               'diving_depth': [], 'diving_best_depth': [], 'obj_diving': [], 'sol_diving':[]}
         self.ips_proven_empty = False
         self.timer_start = time()
 
@@ -160,17 +161,19 @@ class feasiblerounding(Heur):
             runs = 1
         elif diving_mode == 'simple':
             runs = 10
-        samplesize = len(self.model.getVars(transformed=True))/30
-        candidate = self.get_diving_candidates(sol_diving, diving_mode)
-        logging.info("Computed %i diving candidates" % len(candidate))
         run_it = 0
         d_lp = 0
+        t_div = 0
+        samplesize = np.ceil(len(self.model.getVars(transformed=True))/30)
+
         while (run_it < runs):
             obj_diving = math.inf
             run_it = run_it+1
             self.model.startProbing()
             logging.info('>>>> Start Diving ')
             logging.info("Round %i" % run_it)
+            candidate = self.get_diving_candidates(sol_diving, diving_mode, run_it)
+            logging.info("Computed %i diving candidates" % len(candidate))
             fix_it = 0
             while candidate:
                 if (time() - self.timer_start)>3600:
@@ -178,51 +181,60 @@ class feasiblerounding(Heur):
                 to_fix = candidate.pop(-1)
                 self.model.fixVarProbing(to_fix, round(sol_diving_new[to_fix.name]))
                 fix_it = fix_it+1
+                t_0 = time()
                 cutoff, numberofreductions = self.model.propagateProbing(-1)
+                t_div = t_div + (time() - t_0)
                 if cutoff:
                     logging.warning("Diving-LP not feasible anymore")
                 if (fix_it%samplesize == 0) or (not candidate):
                     d_lp = d_lp+1
                     ips_model_p, ips_vars_p = self.build_ips()
                     ips_model_p.hideOutput(True)
-                    ips_model_p.optimize()
+                    t_0 = time()
+                    ips_model_p.optimize() #TODO Hier wären ggf. Warmstarts möglich
+                    t_div = t_div + (time() - t_0)
 
                     sol_diving_new = self.get_sol_submodel(ips_vars_p, ips_model_p)
                     self.round_sol(sol_diving_new)
-                    sol_diving_new = self.fix_and_optimize(sol_diving_new) #TODO do we want this?
-                    obj_diving_new = self.get_obj_value(sol_diving_new)
+                    if not self.sol_satisfies_constrs(sol_diving_new):
+                        t_0 = time()
+                        sol_diving_new = self.fix_and_optimize(sol_diving_new)
+                        t_div = t_div + (time() - t_0)
+                        obj_diving_new = self.get_obj_value(sol_diving_new)
                     if (not sol_diving) or obj_diving_new < obj_diving:
                         logging.info('>>>> Diving yielded better objective: ' + str(obj_diving_new) + ' in Depth ' + str(fix_it))
                         depth_best = fix_it
                         sol_diving = sol_diving_new
                         obj_diving = obj_diving_new
-                    candidate = self.get_diving_candidates(sol_diving_new, diving_mode)
                     ips_model_p.freeProb()
                     del ips_model_p
                     del ips_vars_p
             self.model.endProbing()
+            self.run_statistics['sol_diving'].append(sol_diving)
             self.run_statistics['obj_diving'].append(obj_diving)
             self.run_statistics['diving_depth'].append = fix_it
             self.run_statistics['diving_best_depth'].append(depth_best)
         logging.info('>>>> End Diving')
         self.run_statistics['diving_lp_solves'] = d_lp
+        self.run_statistics['time_d_solveips'] = t_div
         return obj_diving, sol_diving
 
-    def get_diving_candidates(self, ips_sol, diving_mode):
+    def get_diving_candidates(self, ips_sol, diving_mode, run_it):
         if diving_mode == 'impact':
             candidates = self.get_impact_candidates(ips_sol)
         elif diving_mode == 'simple':
-            candidates = self.get_random_candidates(ips_sol)
+            candidates = self.get_random_candidates(ips_sol, run_it)
         else:
             candidates = None
 
         return candidates
 
-    def get_random_candidates(self, ips_sol):
+    def get_random_candidates(self, seed):
         logging.info('Start random candidate selection')
         original_vars = self.model.getVars(transformed=True)
         variables = {v.name: v for v in original_vars if (self.int_and_not_fixed(v))}
         clist = list(variables.values())
+        random.seed(seed)
         random.shuffle(clist)
         if clist:
             return clist
