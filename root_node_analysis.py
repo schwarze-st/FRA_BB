@@ -19,7 +19,7 @@ with open('testbed/'+testbed_name+'.txt', "r") as to_read:
 print('Testing %i problems'%len(testbed))
 error_probs = []
 
-for idx, model_name in enumerate(testbed[6:9]):
+for idx, model_name in enumerate(testbed[6:8]):
     model_name = model_name[:-5]
     logging.info('Testing model ' + model_name)
     print('Testing model ' + model_name)

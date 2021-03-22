@@ -147,7 +147,7 @@ class feasiblerounding(Heur):
         self.run_statistics = {'name': self.model.getProbName(), 'depth': self.model.getDepth(), 'eq_constrs': False,
                                'pruned_prob': False, 'ips_nonempty': False, 'feasible': False,
                                'accepted': False, 'obj_best': None, 'obj_ls': None, 'obj_root':None, 'obj_SCIP': None,
-                               'time_heur': None, 'time_solveips': None, 'time_pp': None, 'time_scip': None, 'time_diving': None, 'diving_lp_solves':[],
+                               'time_heur': None, 'time_solveips': None, 'time_pp': None, 'time_scip': None, 'time_diving_lp': [], 'time_diving_prop':[], 'diving_lp_solves':[],
                                'diving_depth': [], 'diving_best_depth': [], 'obj_diving': [], 'sol_diving':[]}
         self.ips_proven_empty = False
         self.timer_start = time()
@@ -167,11 +167,11 @@ class feasiblerounding(Heur):
         elif diving_mode == 'simple':
             runs = 10
         run_it = 0
-        d_lp = 0
-        t_div_1 = t_div_2 = t_div_3 = 0
         samplesize = np.ceil(len(self.model.getVars(transformed=True))/30)
 
         while (run_it < runs):
+            d_lp = 0
+            t_div_1 = t_div_3 = 0
             obj_diving = math.inf
             run_it = run_it+1
             self.model.startProbing()
@@ -195,11 +195,7 @@ class feasiblerounding(Heur):
                     d_lp = d_lp+1
                     ips_model_p, ips_vars_p = self.build_ips()
                     ips_model_p.hideOutput(True)
-                    t_0 = time()
                     ips_model_p.optimize() #TODO Hier wären ggf. Warmstarts möglich
-                    diff = time() - t_0
-                    t_div_1 = t_div_1 + diff
-                    t_div_2 = t_div_2 + diff
                     t_div_3 = t_div_3 + ips_model_p.getSolvingTime()
 
                     sol_diving_new = self.get_sol_submodel(ips_vars_p, ips_model_p)
@@ -207,8 +203,6 @@ class feasiblerounding(Heur):
                     if not self.sol_satisfies_constrs(sol_diving_new):
                         logging.info('Rounding infeasible: apply fix_and_optimize')
                         sol_diving_new, t_sol = self.fix_and_optimize(sol_diving_new)
-                        t_div_1 = t_div_1 + t_sol
-                        t_div_2 = t_div_2 + t_sol
                         t_div_3 = t_div_3 + t_sol
                     obj_diving_new = self.get_obj_value(sol_diving_new)
                     if (not sol_diving) or obj_diving_new < obj_diving:
@@ -224,9 +218,10 @@ class feasiblerounding(Heur):
             self.run_statistics['obj_diving'].append(obj_diving)
             self.run_statistics['diving_depth'].append(fix_it)
             self.run_statistics['diving_best_depth'].append(depth_best)
+            self.run_statistics['time_diving_lp'].append(t_div_3)
+            self.run_statistics['time_diving_prop'].append(t_div_1)
+            self.run_statistics['diving_lp_solves'].append(d_lp)
         logging.info('>>>> End diving')
-        self.run_statistics['diving_lp_solves'] = d_lp
-        self.run_statistics['time_diving'] = [time()-t_start, t_div_1, t_div_2, t_div_3]
         return obj_diving, sol_diving
 
     def get_diving_candidates(self, ips_sol, diving_mode, run_it):

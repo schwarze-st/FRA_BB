@@ -43,7 +43,7 @@ def convert_dict_to_dataframe():
             results_frame = pd.concat([results_frame,temp_frame], ignore_index = True)
     results_frame = results_frame.reindex(columns=['name', 'depth', 'eq_constrs', 'pruned_prob','ips_nonempty', 'feasible', 'accepted',
                                                    'obj_best', 'obj_SCIP', 'obj_root', 'obj_ls',
-                                                   'time_heur', 'time_solveips', 'time_pp', 'time_scip','time_diving',
+                                                   'time_heur', 'time_solveips', 'time_pp', 'time_scip','time_diving_lp', 'time_diving_prop',
                                                    'diving_lp_solves', 'diving_depth', 'diving_best_depth', 'obj_diving'])
     results_frame.to_pickle('results/FRA_Scip_dataframe')
     print(results_frame.to_string())
