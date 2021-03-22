@@ -226,7 +226,7 @@ class feasiblerounding(Heur):
             self.run_statistics['diving_best_depth'].append(depth_best)
         logging.info('>>>> End diving')
         self.run_statistics['diving_lp_solves'] = d_lp
-        self.run_statistics['time_diving'] = [t_start-time(), t_div_1, t_div_2, t_div_3]
+        self.run_statistics['time_diving'] = [time()-t_start, t_div_1, t_div_2, t_div_3]
         return obj_diving, sol_diving
 
     def get_diving_candidates(self, ips_sol, diving_mode, run_it):
