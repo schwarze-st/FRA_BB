@@ -23,7 +23,7 @@ class feasiblerounding(Heur):
         :return: returns nothing
         """
 
-        self.options = {'mode': 'original', 'delta': 0.999, 'line_search': True, 'diving': True}
+        self.options = {'mode': 'original', 'delta': 0.999, 'line_search': False, 'diving': False}
         if options is None:
             options = {}
         for key in options:
