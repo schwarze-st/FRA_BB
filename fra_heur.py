@@ -23,7 +23,7 @@ class feasiblerounding(Heur):
         :return: returns nothing
         """
 
-        self.options = {'mode': 'original', 'delta': 0.999, 'line_search': False, 'diving': False}
+        self.options = {'mode': 'original', 'delta': 0.999, 'line_search': True, 'diving': True}
         if options is None:
             options = {}
         for key in options:
@@ -79,6 +79,7 @@ class feasiblerounding(Heur):
         logging.info(">>>> Optimize over EIPS")
         timer_ips = time()
         ips_model.hideOutput(True)
+        # ips_model.setRealParam("limits/time", 1800) timelimit on solving for filter_instances.py
         ips_model.optimize()
         self.run_statistics['time_solveips'] = time() - timer_ips
         logging.info("Model status is:" + str(ips_model.getStatus()))
@@ -117,6 +118,9 @@ class feasiblerounding(Heur):
             self.round_sol(sol_root)
             sol_dict[label_sol], _ = self.fix_and_optimize(sol_root)
             val_dict[label_sol] = self.get_obj_value(sol_dict[self.mode])
+        #elif ips_model.getStatus() == 'timelimit': for filter_instances.py
+         #   self.run_statistics['ips_nonempty'] = "timelimit"
+
 
         del ips_model
         del ips_vars
@@ -165,13 +169,15 @@ class feasiblerounding(Heur):
             self.computeB()
             runs = 1
         elif diving_mode == 'simple':
-            runs = 10
+            runs = 3 # 10
         run_it = 0
         samplesize = np.ceil(len(self.model.getVars(transformed=True))/30)
 
         while (run_it < runs):
             d_lp = 0
-            t_div_1 = t_div_3 = 0
+            depth_best=0
+            t_div_1 = 0
+            t_div_3 = 0
             obj_diving = math.inf
             run_it = run_it+1
             self.model.startProbing()
