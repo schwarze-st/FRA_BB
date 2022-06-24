@@ -1,13 +1,16 @@
 import os
 from fra_heur import *
 from pyscipopt import Model, Heur, SCIP_RESULT, SCIP_HEURTIMING, quicksum
+import pandas as pd
 FEAS_TOL = 1E-6
 
 def read_all_test_instances(folder):
-    files = os.listdir('./'+folder)
+    os.chdir(folder)
+    files = os.listdir('./')
     suffix = ".mps"
     pyfiles = [file for file in files if file.endswith(suffix)]
     testset = [file for file in pyfiles]
+    os.chdir("..")
     return testset
 
 def test_heur(model_path, model_name):
@@ -17,15 +20,16 @@ def test_heur(model_path, model_name):
                   freq=1)
     m.readProblem(model_path)
     m.setIntParam('limits/restarts',0)
-    m.setRealParam("limits/time",3600)
+    m.setRealParam("limits/time",1800)
     m.setLongintParam("limits/nodes",1)
+    m.hideOutput(True)
     m.optimize()
     m.freeProb()
-    return m
+    del m
 
-def convert_dict_to_dataframe():
+def convert_dict_to_dataframe(name='results/FRA_Scip.pickle'):
     data = []
-    with open('results/FRA_Scip.pickle', 'rb') as handle:
+    with open(name, 'rb') as handle:
         try:
             while True:
                 data.append(pickle.load(handle))
@@ -38,7 +42,9 @@ def convert_dict_to_dataframe():
             results_frame = temp_frame
         else:
             results_frame = pd.concat([results_frame,temp_frame], ignore_index = True)
-    results_frame = results_frame.reindex(columns=['name', 'depth', 'eq_constrs', 'pruned_prob','ips_nonempty', 'feasible', 'accepted', 'obj_FRA',
-                                                   'obj_SCIP', 'time_heur', 'time_solveips', 'time_pp', 'time_scip', 'impr_PP'])
-    results_frame.to_pickle('results/FRA_Scip_dataframe')
+    results_frame = results_frame.reindex(columns=['name', 'depth', 'eq_constrs', 'pruned_prob','ips_nonempty', 'feasible', 'accepted',
+                                                   'obj_best', 'obj_SCIP', 'obj_root', 'obj_ls',
+                                                   'time_heur', 'time_solveips', 'time_pp', 'time_scip','time_diving_lp', 'time_diving_prop',
+                                                   'diving_lp_solves', 'diving_depth', 'diving_best_depth', 'obj_diving'])
+    results_frame.to_pickle('results/filter_collection_log_dataframe')
     print(results_frame.to_string())

@@ -1,0 +1,42 @@
+
+--------------------------------------------------------------------------------------------------------------------------
+(base) unegj@kit.edu@ior-kop-xi:~/Quelltexte/pyscipopt$ conda info
+
+     active environment : base
+    active env location : /home/ws/unegj/Quelltexte/anaconda3
+            shell level : 1
+       user config file : /home/ws/unegj/.condarc
+ populated config files : 
+          conda version : 4.8.2
+    conda-build version : 3.18.11
+         python version : 3.7.6.final.0
+       virtual packages : __glibc=2.31
+       base environment : /home/ws/unegj/Quelltexte/anaconda3  (writable)
+           channel URLs : https://repo.anaconda.com/pkgs/main/linux-64
+                          https://repo.anaconda.com/pkgs/main/noarch
+                          https://repo.anaconda.com/pkgs/r/linux-64
+                          https://repo.anaconda.com/pkgs/r/noarch
+          package cache : /home/ws/unegj/Quelltexte/anaconda3/pkgs
+                          /home/ws/unegj/.conda/pkgs
+       envs directories : /home/ws/unegj/Quelltexte/anaconda3/envs
+                          /home/ws/unegj/.conda/envs
+               platform : linux-64
+             user-agent : conda/4.8.2 requests/2.22.0 CPython/3.7.6 Linux/5.4.0-84-generic linuxmint/20.2 glibc/2.31
+                UID:GID : 326353:59900
+             netrc file : None
+           offline mode : False
+---------------------------------------------------------------------------------------------------------------------------
+
+(fra_scip) unegj@kit.edu@ior-kop-xi:~/Quelltexte/pyscipopt$ gcc --version
+gcc (Ubuntu 9.3.0-17ubuntu1~20.04) 9.3.0
+Copyright (C) 2019 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+---------------------------------------------------------------------------------------------------------------------------
+pyscipopt version https://bitbucket.org/schwarzestefan/pyscipopt/branch/diving
+---------------------------------------------------------------------------------------------------------------------------
+
+
+
+
