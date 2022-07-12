@@ -1,0 +1,19 @@
+result1 = pd.read_pickle('FRA_Scip_dataframe1')
+result1.set_index('name', inplace=True)
+result2 = pd.read_pickle('FRA_Scip_dataframe2')
+result2.set_index('name', inplace=True)
+result3 = pd.read_pickle('FRA_Scip_dataframe3')
+result3.set_index('name', inplace=True)
+result4 = pd.read_pickle('FRA_Scip_dataframe4')
+result = pd.concat([result1,result2,result3,result4],axis=0)
+info_opt = pd.read_excel('collection.xlsx', index_col=0)
+num_list = []
+for elem in info_opt.loc[result.index]['Objective  Obj.']:
+    if isinstance(elem,str):
+        elem = elem.replace('*','')
+        if elem == 'Infeasible':
+            elem = np.inf
+        elem = float(elem)
+    num_list.append(elem)
+result['v_star'] = num_list
+result['status'] = info_opt.loc[result.index]['Status  Sta.']

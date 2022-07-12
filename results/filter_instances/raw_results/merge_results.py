@@ -3,7 +3,7 @@ import pickle, pandas as pd
 results_frame = pd.DataFrame()
 
 for i in range(8):
-    path = 'testbed2021/temp_results'+str(i+1)+'.pickle'
+    path = 'results/filter_instances/raw_results/temp_results'+str(i+1)+'.pickle'
     print('Append temp_results'+str(i+1)+' to DataFrame.')
     data = []
     with open(path, 'rb') as handle:
@@ -29,5 +29,5 @@ results_frame = results_frame.reindex(columns=['name', 'depth', 'eq_constrs', 'p
                                                    'obj_best', 'obj_SCIP', 'obj_root', 'obj_ls',
                                                    'time_heur', 'time_solveips', 'time_pp', 'time_scip','time_diving_lp', 'time_diving_prop',
                                                    'diving_lp_solves', 'diving_depth', 'diving_best_depth', 'obj_diving'])
-results_frame.to_pickle('results/filter_collection_log_dataframe')
+results_frame.to_pickle('results/filter_instances/filter_collection_dataframe')
 print(results_frame.to_string())
