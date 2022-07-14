@@ -11,8 +11,8 @@ The diving procedure is implemented in <b>fra_heur.py</b> as instance of the cla
 There are scripts for all experiments and data we generated for the publication. 
 The jupyter notebook in <b>results/notebook/results_nb.ipynb</b> extracts all relevant data from the generated output-files 
 ### 1. Filtering the test bed: <b>filter_instances.py</b>
-See results/notebook/results_nb.ipynb
+See results/FilterInstances.ipynb
 ### 2. Running SCIP with fra_heur.py on the test bed: <b>diving_analysis.py</b>
-We run SCIP with fra_heur.py on the obtained test bed with 128 instances with up to 5 diving rounds and 30 minutes maximum run time.
+We run SCIP with fra_heur.py on the obtained test bed with 128 instances with up to 5 diving rounds and 30 minutes maximum run time. Results are displayed in results/Evaluation.ipynb.
 ### 3. Running SCIP with plain settings: <b>SCIP_plain.py</b>
-We run SCIP without fra_heur.py for 32 instances where it found best solutions until the solution is better than the one found with fra_heur.py.
+We run SCIP without fra_heur.py for 32 instances where it found best solutions until the solution is better than the one found with fra_heur.py. Results are displayed in results/Evaluation.ipynb.
